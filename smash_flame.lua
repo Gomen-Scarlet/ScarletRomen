@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Fixed Skill 2 & Responsive GUI Edition)
+-- Name: ScarletRomen (FOV Aim & Updated Tabs Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -21,7 +21,6 @@ local CFG = {
 local S = {
 	AimNPC = false, 
 	AimPlr = false, 
-	AimPlrWall = false, 
 	Aim2D = false, 
 	EspNPC = false, 
 	EspNPC2D = false, 
@@ -43,7 +42,6 @@ SG.IgnoreGuiInset = true
 SG.ScreenInsets = Enum.ScreenInsets.None
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- HÀM KÉO THẢ DRAG & DROP TỐI ƯU CHO TOUCH MOBILE
 local function makeDraggable(guiObject)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -90,7 +88,7 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- LOGO DRAGGABLE (ĐÃ PHÓNG TO 50PX & CÁCH LỀ ĐIỆN THOẠI)
+-- LOGO DRAGGABLE
 local Logo = Instance.new("Frame", SG) 
 Logo.Size = UDim2.new(0, 50, 0, 50)
 Logo.Position = UDim2.new(0, 20, 0.25, 0)
@@ -121,33 +119,44 @@ MainScroll.CanvasSize = UDim2.new(0,0,0,0)
 local MainLayout = Instance.new("UIListLayout", MainScroll)
 MainLayout.Padding = UDim.new(0, 4)
 MainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+MainLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local Footer = Instance.new("TextLabel", Main)
 Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 12), UDim2.new(0, 0, 1, -12), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
 
 ----------------------------------------------------------------
--- TAB SYSTEM (FIX ĐÓNG MỞ TAB)
+-- TAB SYSTEM (TAB NẮM CỐ ĐỊNH Ở TRÊN, SKILL XỔ BÊN DƯỚI)
 ----------------------------------------------------------------
 local function createTabHeader(title, layoutOrder)
-	local btn = Instance.new("TextButton", MainScroll)
-	btn.Size = UDim2.new(1, -6, 0, 24)
+	local tabGroup = Instance.new("Frame", MainScroll)
+	tabGroup.Size = UDim2.new(1, -6, 0, 0)
+	tabGroup.BackgroundTransparency = 1
+	tabGroup.AutomaticSize = Enum.AutomaticSize.Y
+	tabGroup.LayoutOrder = layoutOrder
+
+	local gLayout = Instance.new("UIListLayout", tabGroup)
+	gLayout.Padding = UDim.new(0, 3)
+	gLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	local btn = Instance.new("TextButton", tabGroup)
+	btn.Size = UDim2.new(1, 0, 0, 24)
 	btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 	btn.Text = "  " .. title .. " [ + ]"
 	btn.TextColor3 = Color3.fromRGB(220, 220, 220)
 	btn.Font = Enum.Font.SourceSansBold
 	btn.TextSize = 11
 	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.LayoutOrder = layoutOrder
+	btn.LayoutOrder = 1
 
 	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
 	local st = Instance.new("UIStroke", btn) st.Color = CFG.THEME st.Thickness = 1
 
-	local container = Instance.new("Frame", MainScroll)
-	container.Size = UDim2.new(1, -6, 0, 0)
+	local container = Instance.new("Frame", tabGroup)
+	container.Size = UDim2.new(1, 0, 0, 0)
 	container.BackgroundTransparency = 1
 	container.Visible = false
 	container.AutomaticSize = Enum.AutomaticSize.Y
-	container.LayoutOrder = layoutOrder + 1
+	container.LayoutOrder = 2
 
 	local cLayout = Instance.new("UIListLayout", container)
 	cLayout.Padding = UDim.new(0, 3)
@@ -165,7 +174,7 @@ local function createTabHeader(title, layoutOrder)
 end
 
 local T1Container = createTabHeader("Vision", 1)
-local T2Container = createTabHeader("Liminal", 3)
+local T2Container = createTabHeader("Liminal", 2)
 
 ----------------------------------------------------------------
 -- LOGICS & TARGET FINDERS
@@ -208,51 +217,20 @@ local function toggleHL(m, color, name, on, trans)
 	end
 end
 
-local function getMyPos()
-	local char = LocalPlayer.Character
-	if char then
-		local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head") or char.PrimaryPart
-		if root then return root.Position end
-	end
-	return Camera.CFrame.Position
-end
-
--- FIX LỖI SKILL 2 (RAYCAST CHECK TƯỜNG CHUẨN XÁC)
-local function isVisible(targetHeadPos, targetModel)
-	local origin = Camera.CFrame.Position
-	local direction = targetHeadPos - origin
-	local params = RaycastParams.new()
-	params.FilterType = RaycastFilterType.Exclude
-
-	local ignoreList = {}
-	if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
-	-- Loại bỏ các phần tử không có va chạm vật lý
-	for _, item in ipairs(Workspace:GetDescendants()) do
-		if item:IsA("BasePart") and not item.CanCollide then
-			table.insert(ignoreList, item)
-		end
-	end
-	params.FilterDescendantsInstances = ignoreList
-
-	local result = Workspace:Raycast(origin, direction, params)
-	if result then
-		return result.Instance:IsDescendantOf(targetModel)
-	end
-	return true
-end
-
-local function getClosestByRange(chkFunc, checkWall)
+-- TÌM ĐỐI THỦ GẦN HỒNG TÂM MÀN HÌNH NHẤT (CROSSHAIR FOV)
+local function getClosestToCrosshair(chkFunc)
 	local cl, sDist = nil, math.huge
-	local myPos = getMyPos()
+	local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
 	for _, v in ipairs(Workspace:GetDescendants()) do
 		if chkFunc(v) then
 			local p = getHeadPos(v)
 			if p then
-				local dist = (p - myPos).Magnitude
-				if dist < sDist then
-					if not checkWall or isVisible(p, v) then
-						sDist = dist
+				local screenPos, onScreen = Camera:WorldToViewportPoint(p)
+				if onScreen then
+					local distToCenter = (Vector2.new(screenPos.X, screenPos.Y) - centerScreen).Magnitude
+					if distToCenter < sDist then
+						sDist = distToCenter
 						cl = v
 					end
 				end
@@ -285,18 +263,14 @@ end
 ----------------------------------------------------------------
 -- TAB 1: VISION
 createSkillButton(T1Container, "Skill 1 (Aim NPC Range)", function()
-	S.AimNPC = not S.AimNPC S.AimPlr, S.AimPlrWall, S.Aim2D = false, false, false
+	S.AimNPC = not S.AimNPC S.AimPlr, S.Aim2D = false, false
 	return S.AimNPC
 end)
 
-createSkillButton(T1Container, "Skill 2 (Aim Plr Visible)", function()
-	S.AimPlr = not S.AimPlr S.AimNPC, S.AimPlrWall, S.Aim2D = false, false, false
+-- SKILL 2 MỚI: AIM PLAYER GẦN HỒNG TÂM NHẤT (CÓ HIỆU ỨNG RAINBOW)
+local RainbowBtn = createSkillButton(T1Container, "Skill 2 (Aim Player Crosshair)", function()
+	S.AimPlr = not S.AimPlr S.AimNPC, S.Aim2D = false, false
 	return S.AimPlr
-end)
-
-local RainbowBtn = createSkillButton(T1Container, "Skill 2.5 (Aim Plr Wall)", function()
-	S.AimPlrWall = not S.AimPlrWall S.AimNPC, S.AimPlr, S.Aim2D = false, false, false
-	return S.AimPlrWall
 end)
 
 createSkillButton(T1Container, "Skill 3 (ESP NPC)", function()
@@ -320,7 +294,7 @@ createSkillButton(T1Container, "Skill 4 (ESP Player)", function()
 end)
 
 createSkillButton(T1Container, "Skill 5 (Aim NPC 2D)", function()
-	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr, S.AimPlrWall = false, false, false
+	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr = false, false
 	return S.Aim2D
 end)
 
@@ -352,7 +326,7 @@ createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 end)
 
 ----------------------------------------------------------------
--- RENDER LOOP (CẦU VỒNG + AIM REALTIME)
+-- RENDER LOOP
 ----------------------------------------------------------------
 local frames, lastT = 0, tick()
 local hue = 0
@@ -361,8 +335,8 @@ RunService.RenderStepped:Connect(function()
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
-	-- Rainbow cho Skill 2.5
-	if S.AimPlrWall then
+	-- Rainbow hiệu ứng cho Skill 2 khi BẬT
+	if S.AimPlr then
 		hue = (hue + 0.005) % 1
 		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
 		RainbowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -375,13 +349,12 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	if S.AimNPC then
-		S.Target = getClosestByRange(isNPC, false)
+		S.Target = getClosestToCrosshair(isNPC)
 	elseif S.AimPlr then
-		S.Target = getClosestByRange(checkPlrFunc, true)
-	elseif S.AimPlrWall then
-		S.Target = getClosestByRange(checkPlrFunc, false)
+		-- Skill 2: Nhắm Player gần hồng tâm màn hình nhất
+		S.Target = getClosestToCrosshair(checkPlrFunc)
 	elseif S.Aim2D then
-		S.Target = getClosestByRange(is2DNPC, false)
+		S.Target = getClosestToCrosshair(is2DNPC)
 	else
 		S.Target = nil
 	end
