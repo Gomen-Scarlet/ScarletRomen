@@ -1,12 +1,15 @@
--- Name: ScarletRomen (FOV Aim & Updated Tabs Edition)
+-- Name: ScarletRomen (FOV Aim, Custom Tabs, YinYang & Save/Load Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+
+local SAVE_FILE = "ScarletRomen_Config.json"
 
 local CFG = {
 	THEME = Color3.fromRGB(255, 30, 30),
@@ -29,7 +32,13 @@ local S = {
 	Fps = false, 
 	Bright = false, 
 	Ultra = false, 
-	Target = nil
+	BlackScreen = false,
+	WhiteScreen = false,
+	Target = nil,
+	GuiWidth = 210,
+	GuiHeight = 160,
+	LogoSize = 50,
+	LogoImageId = ""
 }
 
 ----------------------------------------------------------------
@@ -74,7 +83,7 @@ local function makeDraggable(guiObject)
 	end)
 end
 
--- HỒNG TÂM MỎNG & CĂN CHÍNH GIỮA MÀN HÌNH
+-- Crosshair
 local Cross = Instance.new("Frame", SG)
 Cross.Name = "Crosshair"
 Cross.Size = UDim2.fromOffset(12, 12)
@@ -88,21 +97,36 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- LOGO DRAGGABLE
+-- FULLSCREEN OVERLAYS (YinYang Skill 3 & 4)
+local OverlayScreen = Instance.new("Frame", SG)
+OverlayScreen.Size = UDim2.new(1, 0, 1, 0)
+OverlayScreen.Position = UDim2.new(0, 0, 0, 0)
+OverlayScreen.BorderSizePixel = 0
+OverlayScreen.Visible = false
+OverlayScreen.ZIndex = 999
+
+-- LOGO DRAGGABLE (Đặt xích ra giữa màn hình)
 local Logo = Instance.new("Frame", SG) 
-Logo.Size = UDim2.new(0, 50, 0, 50)
-Logo.Position = UDim2.new(0, 20, 0.25, 0)
+Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+Logo.Position = UDim2.new(0.15, 0, 0.4, 0)
 Logo.BackgroundColor3 = Color3.fromRGB(15, 15, 15) 
 makeDraggable(Logo)
 Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 10)
 local LSt = Instance.new("UIStroke", Logo) LSt.Color, LSt.Thickness = CFG.THEME, 2
 
+local LogoImg = Instance.new("ImageLabel", Logo)
+LogoImg.Size = UDim2.new(1, 0, 1, 0)
+LogoImg.BackgroundTransparency = 1
+LogoImg.Visible = false
+Instance.new("UICorner", LogoImg).CornerRadius = UDim.new(0, 10)
+
 local LogoBtn = Instance.new("TextButton", Logo) 
 LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 24
+LogoBtn.ZIndex = 2
 
 -- MAIN UI
 local Main = Instance.new("Frame", SG) 
-Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 210, 0, 130), UDim2.new(0, 80, 0.25, 0), Color3.fromRGB(15, 15, 15) 
+Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight), UDim2.new(0.2, 0, 0.35, 0), Color3.fromRGB(15, 15, 15) 
 Main.ClipsDescendants = true
 makeDraggable(Main)
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
@@ -125,18 +149,16 @@ local Footer = Instance.new("TextLabel", Main)
 Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 12), UDim2.new(0, 0, 1, -12), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
 
 ----------------------------------------------------------------
--- TAB SYSTEM (TAB NẮM CỐ ĐỊNH Ở TRÊN, SKILL XỔ BÊN DƯỚI)
+-- TAB SYSTEM (Thanh Quay Lại / Cố Định)
 ----------------------------------------------------------------
+local activeContainer = nil
+
 local function createTabHeader(title, layoutOrder)
 	local tabGroup = Instance.new("Frame", MainScroll)
 	tabGroup.Size = UDim2.new(1, -6, 0, 0)
 	tabGroup.BackgroundTransparency = 1
 	tabGroup.AutomaticSize = Enum.AutomaticSize.Y
 	tabGroup.LayoutOrder = layoutOrder
-
-	local gLayout = Instance.new("UIListLayout", tabGroup)
-	gLayout.Padding = UDim.new(0, 3)
-	gLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	local btn = Instance.new("TextButton", tabGroup)
 	btn.Size = UDim2.new(1, 0, 0, 24)
@@ -146,7 +168,6 @@ local function createTabHeader(title, layoutOrder)
 	btn.Font = Enum.Font.SourceSansBold
 	btn.TextSize = 11
 	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.LayoutOrder = 1
 
 	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
 	local st = Instance.new("UIStroke", btn) st.Color = CFG.THEME st.Thickness = 1
@@ -156,25 +177,49 @@ local function createTabHeader(title, layoutOrder)
 	container.BackgroundTransparency = 1
 	container.Visible = false
 	container.AutomaticSize = Enum.AutomaticSize.Y
-	container.LayoutOrder = 2
 
 	local cLayout = Instance.new("UIListLayout", container)
 	cLayout.Padding = UDim.new(0, 3)
 	cLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	cLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-	local open = false
-	btn.MouseButton1Click:Connect(function()
-		open = not open
-		container.Visible = open
-		btn.Text = "  " .. title .. (open and " [ - ]" or " [ + ]")
-		btn.BackgroundColor3 = open and CFG.THEME or Color3.fromRGB(25, 25, 25)
-	end)
+	-- THANH BACK TRÊN CÙNG KHI MỞ TAB
+	local backBtn = Instance.new("TextButton", container)
+	backBtn.Size = UDim2.new(1, 0, 0, 20)
+	backBtn.BackgroundColor3 = Color3.fromRGB(45, 15, 15)
+	backBtn.Text = " < Back / Close " .. title
+	backBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+	backBtn.Font = Enum.Font.SourceSansBold
+	backBtn.TextSize = 10
+	backBtn.LayoutOrder = 0
+	Instance.new("UICorner", backBtn).CornerRadius = UDim.new(0, 4)
+
+	local function toggleTab(state)
+		if state then
+			if activeContainer and activeContainer ~= container then
+				activeContainer.Visible = false
+			end
+			container.Visible = true
+			activeContainer = container
+			btn.Text = "  " .. title .. " [ - ]"
+			btn.BackgroundColor3 = CFG.THEME
+		else
+			container.Visible = false
+			if activeContainer == container then activeContainer = nil end
+			btn.Text = "  " .. title .. " [ + ]"
+			btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		end
+	end
+
+	btn.MouseButton1Click:Connect(function() toggleTab(not container.Visible) end)
+	backBtn.MouseButton1Click:Connect(function() toggleTab(false) end)
 
 	return container
 end
 
 local T1Container = createTabHeader("Vision", 1)
 local T2Container = createTabHeader("Liminal", 2)
+local T3Container = createTabHeader("YinYang", 3)
 
 ----------------------------------------------------------------
 -- LOGICS & TARGET FINDERS
@@ -217,7 +262,6 @@ local function toggleHL(m, color, name, on, trans)
 	end
 end
 
--- TÌM ĐỐI THỦ GẦN HỒNG TÂM MÀN HÌNH NHẤT (CROSSHAIR FOV)
 local function getClosestToCrosshair(chkFunc)
 	local cl, sDist = nil, math.huge
 	local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
@@ -240,7 +284,7 @@ local function getClosestToCrosshair(chkFunc)
 	return cl
 end
 
-local function createSkillButton(parent, text, cb)
+local function createSkillButton(parent, text, cb, order)
 	local b = Instance.new("TextButton", parent)
 	b.Size = UDim2.new(1, 0, 0, 24)
 	b.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
@@ -248,6 +292,7 @@ local function createSkillButton(parent, text, cb)
 	b.TextColor3 = Color3.fromRGB(200, 200, 200)
 	b.Font = Enum.Font.SourceSansBold
 	b.TextSize = 10
+	b.LayoutOrder = order or 1
 
 	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
 	b.MouseButton1Click:Connect(function()
@@ -258,26 +303,77 @@ local function createSkillButton(parent, text, cb)
 	return b
 end
 
+local function createSlider(parent, title, min, max, default, cb, order)
+	local frame = Instance.new("Frame", parent)
+	frame.Size = UDim2.new(1, 0, 0, 36)
+	frame.BackgroundTransparency = 1
+	frame.LayoutOrder = order or 1
+
+	local lbl = Instance.new("TextLabel", frame)
+	lbl.Size = UDim2.new(1, 0, 0, 14)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = title .. ": " .. tostring(default)
+	lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+	lbl.Font = Enum.Font.SourceSansBold
+	lbl.TextSize = 10
+
+	local bar = Instance.new("Frame", frame)
+	bar.Size = UDim2.new(1, 0, 0, 10)
+	bar.Position = UDim2.new(0, 0, 0, 18)
+	bar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 3)
+
+	local fill = Instance.new("Frame", bar)
+	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+	fill.BackgroundColor3 = CFG.THEME
+	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
+
+	local isDragging = false
+	local function update(input)
+		local pos = math.clamp((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+		fill.Size = UDim2.new(pos, 0, 1, 0)
+		local val = math.floor(min + (max - min) * pos)
+		lbl.Text = title .. ": " .. tostring(val)
+		cb(val)
+	end
+
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isDragging = true
+			update(input)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isDragging = false
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			update(input)
+		end
+	end)
+end
+
 ----------------------------------------------------------------
 -- SKILLS REGISTER
 ----------------------------------------------------------------
 -- TAB 1: VISION
-createSkillButton(T1Container, "Skill 1 (Aim NPC Range)", function()
+createSkillButton(T1Container, "Skill 1 (Aim NPC Crosshair)", function()
 	S.AimNPC = not S.AimNPC S.AimPlr, S.Aim2D = false, false
 	return S.AimNPC
-end)
+end, 1)
 
--- SKILL 2 MỚI: AIM PLAYER GẦN HỒNG TÂM NHẤT (CÓ HIỆU ỨNG RAINBOW)
 local RainbowBtn = createSkillButton(T1Container, "Skill 2 (Aim Player Crosshair)", function()
 	S.AimPlr = not S.AimPlr S.AimNPC, S.Aim2D = false, false
 	return S.AimPlr
-end)
+end, 2)
 
 createSkillButton(T1Container, "Skill 3 (ESP NPC)", function()
 	S.EspNPC = not S.EspNPC
 	for _, v in ipairs(Workspace:GetDescendants()) do if isNPC(v) then toggleHL(v, CFG.NPC, "SR_NPC", S.EspNPC) end end
 	return S.EspNPC
-end)
+end, 3)
 
 createSkillButton(T1Container, "Skill 4 (ESP Player)", function()
 	S.EspPlr = not S.EspPlr
@@ -291,12 +387,12 @@ createSkillButton(T1Container, "Skill 4 (ESP Player)", function()
 		end
 	end
 	return S.EspPlr
-end)
+end, 4)
 
 createSkillButton(T1Container, "Skill 5 (Aim NPC 2D)", function()
 	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr = false, false
 	return S.Aim2D
-end)
+end, 5)
 
 createSkillButton(T1Container, "Skill 6 (ESP NPC 2D)", function()
 	S.EspNPC2D = not S.EspNPC2D
@@ -307,12 +403,12 @@ createSkillButton(T1Container, "Skill 6 (ESP NPC 2D)", function()
 		end
 	end
 	return S.EspNPC2D
-end)
+end, 6)
 
 -- TAB 2: LIMINAL
-createSkillButton(T2Container, "Skill 1 (ESP Name Player)", function() S.EspName = not S.EspName return S.EspName end)
-createSkillButton(T2Container, "Skill 2 (FPS Booster)", function() S.Fps = not S.Fps settings().Rendering.QualityLevel, Lighting.GlobalShadows = S.Fps and 1 or 7, not S.Fps return S.Fps end)
-createSkillButton(T2Container, "Skill 3 (Full Bright)", function() S.Bright = not S.Bright Lighting.FogEnd, Lighting.Brightness = S.Bright and 9e9 or 1000, S.Bright and 2 or 1 return S.Bright end)
+createSkillButton(T2Container, "Skill 1 (ESP Name Player)", function() S.EspName = not S.EspName return S.EspName end, 1)
+createSkillButton(T2Container, "Skill 2 (FPS Booster)", function() S.Fps = not S.Fps settings().Rendering.QualityLevel, Lighting.GlobalShadows = S.Fps and 1 or 7, not S.Fps return S.Fps end, 2)
+createSkillButton(T2Container, "Skill 3 (Full Bright)", function() S.Bright = not S.Bright Lighting.FogEnd, Lighting.Brightness = S.Bright and 9e9 or 1000, S.Bright and 2 or 1 return S.Bright end, 3)
 createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 	S.Ultra = not S.Ultra FPSLbl.Visible = S.Ultra
 	if S.Ultra then
@@ -323,7 +419,170 @@ createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 		end
 	end
 	return S.Ultra
+end, 4)
+
+-- TAB 3: YINYANG
+createSlider(T3Container, "Skill 1 (GUI Width)", 150, 400, S.GuiWidth, function(v)
+	S.GuiWidth = v
+	Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+end, 1)
+
+createSlider(T3Container, "Skill 2 (Logo Size)", 30, 100, S.LogoSize, function(v)
+	S.LogoSize = v
+	Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+end, 2)
+
+createSkillButton(T3Container, "Skill 3 (Black Screen)", function()
+	S.BlackScreen = not S.BlackScreen
+	S.WhiteScreen = false
+	OverlayScreen.Visible = S.BlackScreen
+	OverlayScreen.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	return S.BlackScreen
+end, 3)
+
+createSkillButton(T3Container, "Skill 4 (White Screen)", function()
+	S.WhiteScreen = not S.WhiteScreen
+	S.BlackScreen = false
+	OverlayScreen.Visible = S.WhiteScreen
+	OverlayScreen.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	return S.WhiteScreen
+end, 4)
+
+-- Skill 5: Input Logo Decal ID
+local tbFrame = Instance.new("Frame", T3Container)
+tbFrame.Size = UDim2.new(1, 0, 0, 24)
+tbFrame.BackgroundTransparency = 1
+tbFrame.LayoutOrder = 5
+
+local logoInput = Instance.new("TextBox", tbFrame)
+logoInput.Size = UDim2.new(1, 0, 1, 0)
+logoInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+logoInput.PlaceholderText = "Skill 5: Enter Decal ID..."
+logoInput.Text = S.LogoImageId
+logoInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+logoInput.Font = Enum.Font.SourceSansBold
+logoInput.TextSize = 10
+Instance.new("UICorner", logoInput).CornerRadius = UDim.new(0, 4)
+
+local function updateLogoImage(id)
+	if id and id ~= "" then
+		LogoImg.Image = "rbxassetid://" .. tostring(id)
+		LogoImg.Visible = true
+		LogoBtn.Text = ""
+	else
+		LogoImg.Visible = false
+		LogoBtn.Text = "S"
+	end
+end
+
+logoInput.FocusLost:Connect(function()
+	S.LogoImageId = logoInput.Text
+	updateLogoImage(S.LogoImageId)
 end)
+
+-- Skill 6: Save Configuration
+local saveBtn = Instance.new("TextButton", T3Container)
+saveBtn.Size = UDim2.new(1, 0, 0, 24)
+saveBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+saveBtn.Text = "Skill 6: Save Config"
+saveBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+saveBtn.Font = Enum.Font.SourceSansBold
+saveBtn.TextSize = 10
+saveBtn.LayoutOrder = 6
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 4)
+
+saveBtn.MouseButton1Click:Connect(function()
+	if writefile then
+		local data = HttpService:JSONEncode({
+			GuiWidth = S.GuiWidth,
+			GuiHeight = S.GuiHeight,
+			LogoSize = S.LogoSize,
+			LogoImageId = S.LogoImageId
+		})
+		writefile(SAVE_FILE, data)
+		saveBtn.Text = "Saved!"
+		task.wait(1)
+		saveBtn.Text = "Skill 6: Save Config"
+	end
+end)
+
+-- Skill 7: Reset Confirmation
+local resetBtn = Instance.new("TextButton", T3Container)
+resetBtn.Size = UDim2.new(1, 0, 0, 24)
+resetBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+resetBtn.Text = "Skill 7: Reset All"
+resetBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+resetBtn.Font = Enum.Font.SourceSansBold
+resetBtn.TextSize = 10
+resetBtn.LayoutOrder = 7
+Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 4)
+
+local confirmFrame = Instance.new("Frame", T3Container)
+confirmFrame.Size = UDim2.new(1, 0, 0, 24)
+confirmFrame.BackgroundTransparency = 1
+confirmFrame.Visible = false
+confirmFrame.LayoutOrder = 8
+
+local yesBtn = Instance.new("TextButton", confirmFrame)
+yesBtn.Size = UDim2.new(0.48, 0, 1, 0)
+yesBtn.Position = UDim2.new(0, 0, 0, 0)
+yesBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+yesBtn.Text = "YES (Confirm)"
+yesBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+yesBtn.Font = Enum.Font.SourceSansBold
+yesBtn.TextSize = 9
+Instance.new("UICorner", yesBtn).CornerRadius = UDim.new(0, 4)
+
+local noBtn = Instance.new("TextButton", confirmFrame)
+noBtn.Size = UDim2.new(0.48, 0, 1, 0)
+noBtn.Position = UDim2.new(0.52, 0, 0, 0)
+noBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+noBtn.Text = "NO (Cancel)"
+noBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+noBtn.Font = Enum.Font.SourceSansBold
+noBtn.TextSize = 9
+Instance.new("UICorner", noBtn).CornerRadius = UDim.new(0, 4)
+
+resetBtn.MouseButton1Click:Connect(function()
+	resetBtn.Visible = false
+	confirmFrame.Visible = true
+end)
+
+noBtn.MouseButton1Click:Connect(function()
+	confirmFrame.Visible = false
+	resetBtn.Visible = true
+end)
+
+yesBtn.MouseButton1Click:Connect(function()
+	if isfile and isfile(SAVE_FILE) and delfile then
+		delfile(SAVE_FILE)
+	end
+	S.GuiWidth, S.GuiHeight, S.LogoSize, S.LogoImageId = 210, 160, 50, ""
+	Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+	Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+	logoInput.Text = ""
+	updateLogoImage("")
+	confirmFrame.Visible = false
+	resetBtn.Visible = true
+end)
+
+--- AUTO LOAD CONFIG
+if readfile and isfile and isfile(SAVE_FILE) then
+	pcall(function()
+		local data = HttpService:JSONDecode(readfile(SAVE_FILE))
+		if data then
+			S.GuiWidth = data.GuiWidth or S.GuiWidth
+			S.GuiHeight = data.GuiHeight or S.GuiHeight
+			S.LogoSize = data.LogoSize or S.LogoSize
+			S.LogoImageId = data.LogoImageId or S.LogoImageId
+
+			Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+			Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+			logoInput.Text = S.LogoImageId
+			updateLogoImage(S.LogoImageId)
+		end
+	end)
+end
 
 ----------------------------------------------------------------
 -- RENDER LOOP
@@ -335,7 +594,6 @@ RunService.RenderStepped:Connect(function()
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
-	-- Rainbow hiệu ứng cho Skill 2 khi BẬT
 	if S.AimPlr then
 		hue = (hue + 0.005) % 1
 		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
@@ -351,7 +609,6 @@ RunService.RenderStepped:Connect(function()
 	if S.AimNPC then
 		S.Target = getClosestToCrosshair(isNPC)
 	elseif S.AimPlr then
-		-- Skill 2: Nhắm Player gần hồng tâm màn hình nhất
 		S.Target = getClosestToCrosshair(checkPlrFunc)
 	elseif S.Aim2D then
 		S.Target = getClosestToCrosshair(is2DNPC)
