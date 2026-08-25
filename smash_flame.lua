@@ -1,4 +1,4 @@
--- Name: smash flame (Hard Aim Lock - No Camera Sticking)
+-- Name: smash flame (Absolute Hard Lock + Target Persistence)
 -- Type: LocalScript (StarterPlayerScripts / StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -17,7 +17,11 @@ local settings = {
 	espPlayer = false
 }
 
-local MAX_DISTANCE = 1500
+-- MỞ RỘNG PHẠM VI AIM (Tăng từ 1500 lên 5000 stud)
+local MAX_DISTANCE = 5000 
+
+-- BIẾN LƯU MỤC TIÊU CỐ ĐỊNH (Aim xong 1 em mới đổi em khác)
+local currentLockedTarget = nil 
 
 --------------------------------------------------------------------------------
 -- 1. UI DRAGGABLE & TAB FIX
@@ -37,7 +41,6 @@ mainFrame.Parent = screenGui
 local toggleMenuBtn = Instance.new("TextButton")
 toggleMenuBtn.Name = "ToggleMenu"
 toggleMenuBtn.Size = UDim2.new(1, 0, 0, 40)
-toggleMenuBtn.Position = UDim2.new(0, 0, 0, 0)
 toggleMenuBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 toggleMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleMenuBtn.Text = "SMASH FLAME ▲"
@@ -129,7 +132,7 @@ toggleMenuBtn.MouseButton1Click:Connect(function()
 end)
 
 --------------------------------------------------------------------------------
--- 2. ESP & CACHE
+-- 2. HỆ THỐNG PHÂN LOẠI TEAM & ESP
 --------------------------------------------------------------------------------
 local function updateButtonVisual(btn, state, activeText, inactiveText)
 	btn.Text = state and activeText or inactiveText
@@ -137,9 +140,28 @@ local function updateButtonVisual(btn, state, activeText, inactiveText)
 	btn.TextColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(200, 200, 200)
 end
 
+-- Hàm kiểm tra chuẩn Đồng Minh (Anti-Ally Check)
+local function isAlly(playerObj)
+	if not playerObj then return false end
+	-- Check 1: Roblox Team System
+	if LocalPlayer.Team and playerObj.Team and (playerObj.Team == LocalPlayer.Team) then
+		return true
+	end
+	-- Check 2: Custom Team Value / Attribute (Blox Fruits & All Star)
+	if LocalPlayer:FindFirstChild("Data") and playerObj:FindFirstChild("Data") then
+		local myTeam = LocalPlayer.Data:FindFirstChild("Team")
+		local targetTeam = playerObj.Data:FindFirstChild("Team")
+		if myTeam and targetTeam and myTeam.Value == targetTeam.Value then
+			return true
+		end
+	end
+	return false
+end
+
 btnSkill1.MouseButton1Click:Connect(function()
 	settings.aimNPC = not settings.aimNPC
 	if settings.aimNPC then settings.aimPlayer = false end
+	currentLockedTarget = nil -- Reset target khi đổi Mode
 	updateButtonVisual(btnSkill1, settings.aimNPC, "Skill 1: Aim NPC [ON]", "Skill 1: Aim NPC [OFF]")
 	updateButtonVisual(btnSkill2, settings.aimPlayer, "Skill 2: Aim Player [ON]", "Skill 2: Aim Player [OFF]")
 end)
@@ -147,6 +169,7 @@ end)
 btnSkill2.MouseButton1Click:Connect(function()
 	settings.aimPlayer = not settings.aimPlayer
 	if settings.aimPlayer then settings.aimNPC = false end
+	currentLockedTarget = nil -- Reset target khi đổi Mode
 	updateButtonVisual(btnSkill2, settings.aimPlayer, "Skill 2: Aim Player [ON]", "Skill 2: Aim Player [OFF]")
 	updateButtonVisual(btnSkill1, settings.aimNPC, "Skill 1: Aim NPC [ON]", "Skill 1: Aim NPC [OFF]")
 end)
@@ -200,9 +223,7 @@ task.spawn(function()
 
 				if playerObj then
 					if settings.espPlayer then
-						local isAlly = LocalPlayer.Team and playerObj.Team and (playerObj.Team == LocalPlayer.Team)
-						local color = isAlly and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(255, 30, 30)
-						
+						local color = isAlly(playerObj) and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(255, 30, 30)
 						if not esp then
 							esp = Instance.new("Highlight")
 							esp.Name = "SmashFlameESP"
@@ -237,41 +258,45 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 3. HARD AIM LOCK ENGINE (Khóa cứng 100%, không trôi)
+-- 3. ABSOLUTE HARD LOCK-ON ENGINE (100% CỨNG - KHÔNG ĐỔI MỤC TIÊU BẬT CHỢT)
 --------------------------------------------------------------------------------
-local function getAimTarget(isSearchingPlayer)
+local function isTargetValid(model, isSearchingPlayer)
+	if not (model and model.Parent) then return false end
+	
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local head = model:FindFirstChild("Head") or model.PrimaryPart
+	if not (humanoid and head and humanoid.Health > 0) then return false end
+	
+	local worldDist = (head.Position - Camera.CFrame.Position).Magnitude
+	if worldDist > MAX_DISTANCE then return false end
+	
+	local playerObj = Players:GetPlayerFromCharacter(model)
+	if isSearchingPlayer then
+		if playerObj and not isAlly(playerObj) then
+			return true
+		end
+	else
+		if not playerObj then
+			return true
+		end
+	end
+	return false
+end
+
+local function getNewTarget(isSearchingPlayer)
 	local closestHead = nil
 	local shortestDistance = math.huge
 	local viewportCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
-	for _, obj in ipairs(cachedTargets) do
-		if obj and obj.Parent then
-			local playerObj = Players:GetPlayerFromCharacter(obj)
-			local humanoid = obj:FindFirstChildOfClass("Humanoid")
-			local head = obj:FindFirstChild("Head") or obj.PrimaryPart
-
-			if humanoid and head and humanoid.Health > 0 then
-				local isValid = false
-				if isSearchingPlayer and playerObj then
-					if not (LocalPlayer.Team and playerObj.Team and playerObj.Team == LocalPlayer.Team) then
-						isValid = true
-					end
-				elseif not isSearchingPlayer and not playerObj then
-					isValid = true
-				end
-
-				if isValid then
-					local worldDist = (head.Position - Camera.CFrame.Position).Magnitude
-					if worldDist <= MAX_DISTANCE then
-						local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-						if onScreen then
-							local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-							if mouseDist < shortestDistance then
-								shortestDistance = mouseDist
-								closestHead = head
-							end
-						end
-					end
+	for _, model in ipairs(cachedTargets) do
+		if isTargetValid(model, isSearchingPlayer) then
+			local head = model:FindFirstChild("Head") or model.PrimaryPart
+			local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+			if onScreen then
+				local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+				if mouseDist < shortestDistance then
+					shortestDistance = mouseDist
+					closestHead = head
 				end
 			end
 		end
@@ -279,18 +304,30 @@ local function getAimTarget(isSearchingPlayer)
 	return closestHead
 end
 
--- RenderStepped ép góc nhìn dính chặt vào mục tiêu ở từng frame
+-- RenderStepped xử lý Hard Lock tuyệt đối
 RunService.RenderStepped:Connect(function()
-	local targetHead = nil
-	
-	if settings.aimNPC then
-		targetHead = getAimTarget(false)
-	elseif settings.aimPlayer then
-		targetHead = getAimTarget(true)
-	end
+	local isSearchingPlayer = settings.aimPlayer
+	local isAimActive = settings.aimNPC or settings.aimPlayer
 
-	if targetHead then
-		-- Khóa cứng Camera về phía đầu mục tiêu
-		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
+	if isAimActive then
+		-- Kiểm tra xem mục tiêu đang khóa có còn sống / hợp lệ không
+		if currentLockedTarget then
+			local parentModel = currentLockedTarget.Parent
+			if not isTargetValid(parentModel, isSearchingPlayer) then
+				currentLockedTarget = nil -- Mục tiêu chết hoặc ra khỏi phạm vi -> Hủy khóa
+			end
+		end
+
+		-- Nếu chưa có mục tiêu -> Tìm mục tiêu mới gần tâm nhất
+		if not currentLockedTarget then
+			currentLockedTarget = getNewTarget(isSearchingPlayer)
+		end
+
+		-- BẮT ĐẦU LOCK 100% CỨNG TUYỆT ĐỐI
+		if currentLockedTarget then
+			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, currentLockedTarget.Position)
+		end
+	else
+		currentLockedTarget = nil
 	end
 end)
