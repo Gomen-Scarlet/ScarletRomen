@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Fixed Logic, Target Lock & Dynamic UI Edition)
+-- Name: ScarletRomen (Team Check ESP Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -15,7 +15,8 @@ local CFG = {
 	THEME = Color3.fromRGB(255, 30, 30),
 	NPC = Color3.fromRGB(255, 215, 0),
 	NPC2D = Color3.fromRGB(0, 150, 255),
-	PLR = Color3.fromRGB(255, 40, 40),
+	ENEMY = Color3.fromRGB(255, 40, 40),
+	ALLY = Color3.fromRGB(0, 255, 100),
 	MY_BODY = Color3.fromRGB(170, 0, 255),
 	NAME = Color3.fromRGB(0, 170, 255),
 	STROKE = Color3.fromRGB(0, 40, 120)
@@ -224,30 +225,32 @@ local T3Container = createTabHeader("YinYang", 3)
 ----------------------------------------------------------------
 -- LOGICS & TARGET FINDERS
 ----------------------------------------------------------------
+local function isEnemy(player)
+	if not player or player == LocalPlayer then return false end
+	-- Nếu game có hệ thống Team
+	if LocalPlayer.Team and player.Team then
+		return LocalPlayer.Team ~= player.Team
+	end
+	-- Nếu là game FFA (Không chia team, ai cũng gây sát thương cho nhau)
+	return true
+end
+
 local function isStrictNPC(m)
 	if not m or not m:IsA("Model") then return false end
 	if Players:GetPlayerFromCharacter(m) then return false end
-	
 	local hum = m:FindFirstChildOfClass("Humanoid")
 	if not hum or hum.Health <= 0 then return false end
-	
 	local head = m:FindFirstChild("Head") or m.PrimaryPart
-	if not head or not head:IsA("BasePart") then return false end
-	
-	return true
+	return head and head:IsA("BasePart")
 end
 
 local function isStrictPlayer(m)
 	if not m or not m:IsA("Model") or m == LocalPlayer.Character then return false end
 	if not Players:GetPlayerFromCharacter(m) then return false end
-	
 	local hum = m:FindFirstChildOfClass("Humanoid")
 	if not hum or hum.Health <= 0 then return false end
-	
 	local head = m:FindFirstChild("Head") or m.PrimaryPart
-	if not head or not head:IsA("BasePart") then return false end
-	
-	return true
+	return head and head:IsA("BasePart")
 end
 
 local function is2DNPC(o)
@@ -372,14 +375,16 @@ createSkillButton(T1Container, "Skill 3 (ESP NPC)", function()
 	return S.EspNPC
 end, 3)
 
+-- SKILL 4 (ESP Player: Đỏ = Enemy / Xanh = Ally)
 createSkillButton(T1Container, "Skill 4 (ESP Player)", function()
 	S.EspPlr = not S.EspPlr
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
 			if p == LocalPlayer then
-				toggleHL(p.Character, CFG.MY_BODY, "SR_MY_ESP", S.EspPlr, 0.7)
+				toggleHL(p.Character, CFG.MY_BODY, "SR_PLR", S.EspPlr, 0.7)
 			else
-				toggleHL(p.Character, CFG.PLR, "SR_PLR", S.EspPlr, 0.5)
+				local espColor = isEnemy(p) and CFG.ENEMY or CFG.ALLY
+				toggleHL(p.Character, espColor, "SR_PLR", S.EspPlr, 0.5)
 			end
 		end
 	end
@@ -467,7 +472,7 @@ local logoInput = createTextInput(T3Container, "Skill 5: Enter Decal ID...", S.L
 	updateLogoImage(S.LogoImageId)
 end, 5)
 
--- Skill 6: Save Configuration (Rainbow Loop)
+-- Skill 6: Save Config
 local saveBtn = Instance.new("TextButton", T3Container)
 saveBtn.Size = UDim2.new(1, 0, 0, 24)
 saveBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
@@ -490,7 +495,7 @@ saveBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- Skill 7: Reset (Flashing Red to White)
+-- Skill 7: Reset
 local resetBtn = Instance.new("TextButton", T3Container)
 resetBtn.Size = UDim2.new(1, 0, 0, 24)
 resetBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
@@ -585,21 +590,32 @@ RunService.RenderStepped:Connect(function(dt)
 
 	hue = (hue + dt * 0.5) % 1
 	
-	-- Skill 6 (Rainbow Loop nút Save)
 	saveBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.7, 0.8)
 
-	-- Skill 7 (Flashing Red -> White nút Reset)
 	flashTimer = (flashTimer + dt * 4) % (math.pi * 2)
 	local lerpFactor = (math.sin(flashTimer) + 1) / 2
 	resetBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0):Lerp(Color3.fromRGB(255, 255, 255), lerpFactor)
 	resetBtn.TextColor3 = Color3.fromRGB(0, 0, 0):Lerp(Color3.fromRGB(255, 0, 0), lerpFactor)
 
-	-- Skill 2 Rainbow Btn Visual
 	if S.AimPlr then
 		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
 		RainbowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	else
 		RainbowBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+
+	-- Cập nhật động ESP Player liên tục (khi đổi team)
+	if S.EspPlr then
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then
+				if p == LocalPlayer then
+					toggleHL(p.Character, CFG.MY_BODY, "SR_PLR", true, 0.7)
+				else
+					local espColor = isEnemy(p) and CFG.ENEMY or CFG.ALLY
+					toggleHL(p.Character, espColor, "SR_PLR", true, 0.5)
+				end
+			end
+		end
 	end
 
 	-- AIM LOCK LOGIC
