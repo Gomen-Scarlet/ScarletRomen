@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Final Ultimate - Fixed ESP 2D & UI Scroll)
+-- Name: ScarletRomen (Final Ultimate - Compact UI)
 -- Type: LocalScript (Đặt trong StarterPlayerScripts hoặc StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -11,11 +11,10 @@ local Camera = Workspace.CurrentCamera
 
 -- CONFIGURATIONS
 local CONFIG = {
-	NPC_AIM_RANGE = 4000,
+	NPC_AIM_RANGE = 5000,
 	LOGO_ID = "rbxassetid://133227737824937",
 	COLOR_THEME = Color3.fromRGB(255, 30, 30), -- Viền đỏ tươi
 	COLOR_NPC_ESP = Color3.fromRGB(255, 215, 0), -- Vàng (NPC 3D)
-	COLOR_NPC_2D_ESP = Color3.fromRGB(0, 150, 255), -- Xanh dương (NPC 2D)
 	COLOR_ENEMY_ESP = Color3.fromRGB(255, 40, 40), -- Đỏ
 	COLOR_ALLY_ESP = Color3.fromRGB(40, 255, 40), -- Xanh lá
 }
@@ -27,7 +26,6 @@ local State = {
 	AimNPC2D = false,
 	EspNPC = false,
 	EspPlayer = false,
-	EspNPC2D = false,
 	LockedTarget = nil
 }
 
@@ -131,10 +129,10 @@ sLabel.TextStrokeTransparency = 0
 sLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 sLabel.Parent = logoButton
 
--- 3. MAIN MENU TAB (NGẮN GỌN + THANH TRƯỢT)
+-- 3. MAIN MENU TAB (SIÊU NGẮN - HIỂN THỊ CHUẨN 3 SKILL)
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 230, 0, 250) -- Chiều cao ngắn (chứa đủ 4 nút)
+mainFrame.Size = UDim2.new(0, 230, 0, 190) -- Chiều cao thu gọn còn 190px (đủ 3 skill)
 mainFrame.Position = UDim2.new(0.12, 0, 0.2, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainFrame.Visible = true
@@ -153,7 +151,7 @@ mainStroke.Parent = mainFrame
 
 -- Tiêu đề
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 36)
+titleLabel.Size = UDim2.new(1, 0, 0, 34)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "ScarletRomen (Final Ultimate)"
 titleLabel.TextColor3 = CONFIG.COLOR_THEME
@@ -163,7 +161,7 @@ titleLabel.Parent = mainFrame
 
 local line = Instance.new("Frame")
 line.Size = UDim2.new(1, -16, 0, 2)
-line.Position = UDim2.new(0, 8, 0, 36)
+line.Position = UDim2.new(0, 8, 0, 34)
 line.BackgroundColor3 = CONFIG.COLOR_THEME
 line.BorderSizePixel = 0
 line.Parent = mainFrame
@@ -171,10 +169,10 @@ line.Parent = mainFrame
 -- Thanh trượt (ScrollingFrame)
 local scrollFrame = Instance.new("ScrollingFrame")
 scrollFrame.Name = "ScrollContainer"
-scrollFrame.Size = UDim2.new(1, 0, 1, -60)
-scrollFrame.Position = UDim2.new(0, 0, 0, 38)
+scrollFrame.Size = UDim2.new(1, 0, 1, -56)
+scrollFrame.Position = UDim2.new(0, 0, 0, 36)
 scrollFrame.BackgroundTransparency = 1
-scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 270) -- Đủ sức chứa nhiều skill hơn
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 220) -- Canvas chứa vừa 5 skill
 scrollFrame.ScrollBarThickness = 4
 scrollFrame.ScrollBarImageColor3 = CONFIG.COLOR_THEME
 scrollFrame.Parent = mainFrame
@@ -188,8 +186,8 @@ buttonsLayout.Parent = scrollFrame
 -- Footer Credit
 local footerLabel = Instance.new("TextLabel")
 footerLabel.Name = "Footer"
-footerLabel.Size = UDim2.new(1, 0, 0, 20)
-footerLabel.Position = UDim2.new(0, 0, 1, -20)
+footerLabel.Size = UDim2.new(1, 0, 0, 18)
+footerLabel.Position = UDim2.new(0, 0, 1, -18)
 footerLabel.BackgroundTransparency = 1
 footerLabel.Text = "by: Scarlet Romen"
 footerLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
@@ -203,7 +201,7 @@ logoButton.MouseButton1Click:Connect(function()
 end)
 
 ----------------------------------------------------------------
--- CHECK LOGIC (FIX LỖI ESP TƯỜNG)
+-- CHECK LOGIC
 ----------------------------------------------------------------
 local function isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
@@ -213,12 +211,10 @@ local function isValidNPC(model)
 	return humanoid and head and humanoid.Health > 0
 end
 
--- Lọc NPC 2D chuẩn xác, loại bỏ tường xây dựng
 local function isValid2DNPC(obj)
 	if not obj then return false end
 	if Players:GetPlayerFromCharacter(obj) then return false end
 	
-	-- Loại bỏ các kiến trúc tường / sàn / nhà cửa phổ biến trong studio
 	local nameLower = string.lower(obj.Name)
 	if string.find(nameLower, "wall") or string.find(nameLower, "tuong") or string.find(nameLower, "part") or string.find(nameLower, "baseplate") or string.find(nameLower, "building") then
 		return false
@@ -232,8 +228,6 @@ local function isValid2DNPC(obj)
 			has2DVisual = true
 		end
 	end
-	
-	-- Chỉ nhận nếu có thuộc tính 2D và KHÔNG PHẢI là NPC 3D có Humanoid
 	return has2DVisual and not isValidNPC(obj)
 end
 
@@ -277,21 +271,6 @@ local function refreshNpcESP()
 				applyHighlight(obj, CONFIG.COLOR_NPC_ESP, "SR_NPC_ESP")
 			else
 				removeHighlight(obj, "SR_NPC_ESP")
-			end
-		end
-	end
-end
-
-local function refresh2DNpcESP()
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if isValid2DNPC(obj) then
-			local targetObj = (obj:IsA("Model") or obj:IsA("BasePart")) and obj or obj.Parent
-			if targetObj and (targetObj:IsA("Model") or targetObj:IsA("BasePart")) then
-				if State.EspNPC2D then
-					applyHighlight(targetObj, CONFIG.COLOR_NPC_2D_ESP, "SR_NPC_2D_ESP")
-				else
-					removeHighlight(targetObj, "SR_NPC_2D_ESP")
-				end
 			end
 		end
 	end
@@ -387,7 +366,7 @@ end
 local function createSkillButton(order, text, onClick)
 	local btn = Instance.new("TextButton")
 	btn.Name = "SkillButton_" .. order
-	btn.Size = UDim2.new(0, 195, 0, 36)
+	btn.Size = UDim2.new(0, 195, 0, 34)
 	btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	btn.Text = text .. ": OFF"
 	btn.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -451,12 +430,6 @@ createSkillButton(5, "Skill 5 (Aim NPC 2D)", function()
 		State.LockedTarget = getClosest2DNPC()
 	else State.LockedTarget = nil end
 	return State.AimNPC2D
-end)
-
-createSkillButton(6, "Skill 6 (ESP NPC 2D)", function()
-	State.EspNPC2D = not State.EspNPC2D
-	refresh2DNpcESP()
-	return State.EspNPC2D
 end)
 
 ----------------------------------------------------------------
