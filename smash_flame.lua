@@ -1,4 +1,4 @@
--- Name: ScarletRomen (FOV Aim, Custom Tabs, YinYang & Save/Load Edition)
+-- Name: ScarletRomen (Fixed Logic, Target Lock & Dynamic UI Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -34,7 +34,8 @@ local S = {
 	Ultra = false, 
 	BlackScreen = false,
 	WhiteScreen = false,
-	Target = nil,
+	LockedTargetNPC = nil,
+	LockedTargetPlr = nil,
 	GuiWidth = 210,
 	GuiHeight = 160,
 	LogoSize = 50,
@@ -97,7 +98,7 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- FULLSCREEN OVERLAYS (YinYang Skill 3 & 4)
+-- FULLSCREEN OVERLAYS
 local OverlayScreen = Instance.new("Frame", SG)
 OverlayScreen.Size = UDim2.new(1, 0, 1, 0)
 OverlayScreen.Position = UDim2.new(0, 0, 0, 0)
@@ -105,7 +106,7 @@ OverlayScreen.BorderSizePixel = 0
 OverlayScreen.Visible = false
 OverlayScreen.ZIndex = 999
 
--- LOGO DRAGGABLE (Đặt xích ra giữa màn hình)
+-- LOGO DRAGGABLE
 local Logo = Instance.new("Frame", SG) 
 Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
 Logo.Position = UDim2.new(0.15, 0, 0.4, 0)
@@ -124,7 +125,7 @@ local LogoBtn = Instance.new("TextButton", Logo)
 LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 24
 LogoBtn.ZIndex = 2
 
--- MAIN UI
+-- MAIN UI DRAGGABLE
 local Main = Instance.new("Frame", SG) 
 Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight), UDim2.new(0.2, 0, 0.35, 0), Color3.fromRGB(15, 15, 15) 
 Main.ClipsDescendants = true
@@ -149,7 +150,7 @@ local Footer = Instance.new("TextLabel", Main)
 Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 12), UDim2.new(0, 0, 1, -12), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
 
 ----------------------------------------------------------------
--- TAB SYSTEM (Thanh Quay Lại / Cố Định)
+-- TAB SYSTEM
 ----------------------------------------------------------------
 local activeContainer = nil
 
@@ -183,7 +184,6 @@ local function createTabHeader(title, layoutOrder)
 	cLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	cLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-	-- THANH BACK TRÊN CÙNG KHI MỞ TAB
 	local backBtn = Instance.new("TextButton", container)
 	backBtn.Size = UDim2.new(1, 0, 0, 20)
 	backBtn.BackgroundColor3 = Color3.fromRGB(45, 15, 15)
@@ -224,8 +224,30 @@ local T3Container = createTabHeader("YinYang", 3)
 ----------------------------------------------------------------
 -- LOGICS & TARGET FINDERS
 ----------------------------------------------------------------
-local function isNPC(m)
-	return m and m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m:FindFirstChildOfClass("Humanoid") and m:FindFirstChildOfClass("Humanoid").Health > 0 and (m:FindFirstChild("Head") or m.PrimaryPart)
+local function isStrictNPC(m)
+	if not m or not m:IsA("Model") then return false end
+	if Players:GetPlayerFromCharacter(m) then return false end
+	
+	local hum = m:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	
+	local head = m:FindFirstChild("Head") or m.PrimaryPart
+	if not head or not head:IsA("BasePart") then return false end
+	
+	return true
+end
+
+local function isStrictPlayer(m)
+	if not m or not m:IsA("Model") or m == LocalPlayer.Character then return false end
+	if not Players:GetPlayerFromCharacter(m) then return false end
+	
+	local hum = m:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+	
+	local head = m:FindFirstChild("Head") or m.PrimaryPart
+	if not head or not head:IsA("BasePart") then return false end
+	
+	return true
 end
 
 local function is2DNPC(o)
@@ -303,75 +325,50 @@ local function createSkillButton(parent, text, cb, order)
 	return b
 end
 
-local function createSlider(parent, title, min, max, default, cb, order)
-	local frame = Instance.new("Frame", parent)
-	frame.Size = UDim2.new(1, 0, 0, 36)
-	frame.BackgroundTransparency = 1
-	frame.LayoutOrder = order or 1
+local function createTextInput(parent, placeholder, defaultText, cb, order)
+	local tbFrame = Instance.new("Frame", parent)
+	tbFrame.Size = UDim2.new(1, 0, 0, 24)
+	tbFrame.BackgroundTransparency = 1
+	tbFrame.LayoutOrder = order or 1
 
-	local lbl = Instance.new("TextLabel", frame)
-	lbl.Size = UDim2.new(1, 0, 0, 14)
-	lbl.BackgroundTransparency = 1
-	lbl.Text = title .. ": " .. tostring(default)
-	lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
-	lbl.Font = Enum.Font.SourceSansBold
-	lbl.TextSize = 10
+	local input = Instance.new("TextBox", tbFrame)
+	input.Size = UDim2.new(1, 0, 1, 0)
+	input.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+	input.PlaceholderText = placeholder
+	input.Text = tostring(defaultText)
+	input.TextColor3 = Color3.fromRGB(255, 255, 255)
+	input.Font = Enum.Font.SourceSansBold
+	input.TextSize = 10
+	Instance.new("UICorner", input).CornerRadius = UDim.new(0, 4)
 
-	local bar = Instance.new("Frame", frame)
-	bar.Size = UDim2.new(1, 0, 0, 10)
-	bar.Position = UDim2.new(0, 0, 0, 18)
-	bar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 3)
-
-	local fill = Instance.new("Frame", bar)
-	fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-	fill.BackgroundColor3 = CFG.THEME
-	Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
-
-	local isDragging = false
-	local function update(input)
-		local pos = math.clamp((input.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-		fill.Size = UDim2.new(pos, 0, 1, 0)
-		local val = math.floor(min + (max - min) * pos)
-		lbl.Text = title .. ": " .. tostring(val)
-		cb(val)
-	end
-
-	bar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			isDragging = true
-			update(input)
-		end
+	input.FocusLost:Connect(function()
+		cb(input.Text)
 	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			isDragging = false
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input)
-		if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-			update(input)
-		end
-	end)
+
+	return input
 end
 
 ----------------------------------------------------------------
 -- SKILLS REGISTER
 ----------------------------------------------------------------
 -- TAB 1: VISION
-createSkillButton(T1Container, "Skill 1 (Aim NPC Crosshair)", function()
-	S.AimNPC = not S.AimNPC S.AimPlr, S.Aim2D = false, false
+createSkillButton(T1Container, "Skill 1 (Aim NPC Strict & Lock)", function()
+	S.AimNPC = not S.AimNPC
+	S.AimPlr, S.Aim2D = false, false
+	if not S.AimNPC then S.LockedTargetNPC = nil end
 	return S.AimNPC
 end, 1)
 
-local RainbowBtn = createSkillButton(T1Container, "Skill 2 (Aim Player Crosshair)", function()
-	S.AimPlr = not S.AimPlr S.AimNPC, S.Aim2D = false, false
+local RainbowBtn = createSkillButton(T1Container, "Skill 2 (Aim Player & Lock)", function()
+	S.AimPlr = not S.AimPlr
+	S.AimNPC, S.Aim2D = false, false
+	if not S.AimPlr then S.LockedTargetPlr = nil end
 	return S.AimPlr
 end, 2)
 
 createSkillButton(T1Container, "Skill 3 (ESP NPC)", function()
 	S.EspNPC = not S.EspNPC
-	for _, v in ipairs(Workspace:GetDescendants()) do if isNPC(v) then toggleHL(v, CFG.NPC, "SR_NPC", S.EspNPC) end end
+	for _, v in ipairs(Workspace:GetDescendants()) do if isStrictNPC(v) then toggleHL(v, CFG.NPC, "SR_NPC", S.EspNPC) end end
 	return S.EspNPC
 end, 3)
 
@@ -422,14 +419,20 @@ createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 end, 4)
 
 -- TAB 3: YINYANG
-createSlider(T3Container, "Skill 1 (GUI Width)", 150, 400, S.GuiWidth, function(v)
-	S.GuiWidth = v
-	Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+local guiWidthInput = createTextInput(T3Container, "Skill 1: Enter GUI Width", S.GuiWidth, function(val)
+	local num = tonumber(val)
+	if num and num >= 100 and num <= 800 then
+		S.GuiWidth = num
+		Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+	end
 end, 1)
 
-createSlider(T3Container, "Skill 2 (Logo Size)", 30, 100, S.LogoSize, function(v)
-	S.LogoSize = v
-	Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+local logoSizeInput = createTextInput(T3Container, "Skill 2: Enter Logo Size", S.LogoSize, function(val)
+	local num = tonumber(val)
+	if num and num >= 20 and num <= 200 then
+		S.LogoSize = num
+		Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+	end
 end, 2)
 
 createSkillButton(T3Container, "Skill 3 (Black Screen)", function()
@@ -448,22 +451,6 @@ createSkillButton(T3Container, "Skill 4 (White Screen)", function()
 	return S.WhiteScreen
 end, 4)
 
--- Skill 5: Input Logo Decal ID
-local tbFrame = Instance.new("Frame", T3Container)
-tbFrame.Size = UDim2.new(1, 0, 0, 24)
-tbFrame.BackgroundTransparency = 1
-tbFrame.LayoutOrder = 5
-
-local logoInput = Instance.new("TextBox", tbFrame)
-logoInput.Size = UDim2.new(1, 0, 1, 0)
-logoInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-logoInput.PlaceholderText = "Skill 5: Enter Decal ID..."
-logoInput.Text = S.LogoImageId
-logoInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-logoInput.Font = Enum.Font.SourceSansBold
-logoInput.TextSize = 10
-Instance.new("UICorner", logoInput).CornerRadius = UDim.new(0, 4)
-
 local function updateLogoImage(id)
 	if id and id ~= "" then
 		LogoImg.Image = "rbxassetid://" .. tostring(id)
@@ -475,17 +462,17 @@ local function updateLogoImage(id)
 	end
 end
 
-logoInput.FocusLost:Connect(function()
-	S.LogoImageId = logoInput.Text
+local logoInput = createTextInput(T3Container, "Skill 5: Enter Decal ID...", S.LogoImageId, function(val)
+	S.LogoImageId = val
 	updateLogoImage(S.LogoImageId)
-end)
+end, 5)
 
--- Skill 6: Save Configuration
+-- Skill 6: Save Configuration (Rainbow Loop)
 local saveBtn = Instance.new("TextButton", T3Container)
 saveBtn.Size = UDim2.new(1, 0, 0, 24)
 saveBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 saveBtn.Text = "Skill 6: Save Config"
-saveBtn.TextColor3 = Color3.fromRGB(0, 255, 150)
+saveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 saveBtn.Font = Enum.Font.SourceSansBold
 saveBtn.TextSize = 10
 saveBtn.LayoutOrder = 6
@@ -500,18 +487,15 @@ saveBtn.MouseButton1Click:Connect(function()
 			LogoImageId = S.LogoImageId
 		})
 		writefile(SAVE_FILE, data)
-		saveBtn.Text = "Saved!"
-		task.wait(1)
-		saveBtn.Text = "Skill 6: Save Config"
 	end
 end)
 
--- Skill 7: Reset Confirmation
+-- Skill 7: Reset (Flashing Red to White)
 local resetBtn = Instance.new("TextButton", T3Container)
 resetBtn.Size = UDim2.new(1, 0, 0, 24)
-resetBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+resetBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
 resetBtn.Text = "Skill 7: Reset All"
-resetBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+resetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 resetBtn.Font = Enum.Font.SourceSansBold
 resetBtn.TextSize = 10
 resetBtn.LayoutOrder = 7
@@ -560,13 +544,15 @@ yesBtn.MouseButton1Click:Connect(function()
 	S.GuiWidth, S.GuiHeight, S.LogoSize, S.LogoImageId = 210, 160, 50, ""
 	Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
 	Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+	guiWidthInput.Text = tostring(S.GuiWidth)
+	logoSizeInput.Text = tostring(S.LogoSize)
 	logoInput.Text = ""
 	updateLogoImage("")
 	confirmFrame.Visible = false
 	resetBtn.Visible = true
 end)
 
---- AUTO LOAD CONFIG
+-- AUTO LOAD CONFIG
 if readfile and isfile and isfile(SAVE_FILE) then
 	pcall(function()
 		local data = HttpService:JSONDecode(readfile(SAVE_FILE))
@@ -578,6 +564,8 @@ if readfile and isfile and isfile(SAVE_FILE) then
 
 			Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
 			Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+			guiWidthInput.Text = tostring(S.GuiWidth)
+			logoSizeInput.Text = tostring(S.LogoSize)
 			logoInput.Text = S.LogoImageId
 			updateLogoImage(S.LogoImageId)
 		end
@@ -589,35 +577,53 @@ end
 ----------------------------------------------------------------
 local frames, lastT = 0, tick()
 local hue = 0
+local flashTimer = 0
 
-RunService.RenderStepped:Connect(function()
+RunService.RenderStepped:Connect(function(dt)
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
+	hue = (hue + dt * 0.5) % 1
+	
+	-- Skill 6 (Rainbow Loop nút Save)
+	saveBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.7, 0.8)
+
+	-- Skill 7 (Flashing Red -> White nút Reset)
+	flashTimer = (flashTimer + dt * 4) % (math.pi * 2)
+	local lerpFactor = (math.sin(flashTimer) + 1) / 2
+	resetBtn.BackgroundColor3 = Color3.fromRGB(255, 0, 0):Lerp(Color3.fromRGB(255, 255, 255), lerpFactor)
+	resetBtn.TextColor3 = Color3.fromRGB(0, 0, 0):Lerp(Color3.fromRGB(255, 0, 0), lerpFactor)
+
+	-- Skill 2 Rainbow Btn Visual
 	if S.AimPlr then
-		hue = (hue + 0.005) % 1
 		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
 		RainbowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	else
 		RainbowBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
 	end
 
-	local checkPlrFunc = function(v)
-		return v:IsA("Model") and Players:GetPlayerFromCharacter(v) and v ~= LocalPlayer.Character and v:FindFirstChildOfClass("Humanoid") and v:FindFirstChildOfClass("Humanoid").Health > 0
-	end
+	-- AIM LOCK LOGIC
+	local currentTarget = nil
 
 	if S.AimNPC then
-		S.Target = getClosestToCrosshair(isNPC)
+		if not isStrictNPC(S.LockedTargetNPC) then
+			S.LockedTargetNPC = getClosestToCrosshair(isStrictNPC)
+		end
+		currentTarget = S.LockedTargetNPC
 	elseif S.AimPlr then
-		S.Target = getClosestToCrosshair(checkPlrFunc)
+		if not isStrictPlayer(S.LockedTargetPlr) then
+			S.LockedTargetPlr = getClosestToCrosshair(isStrictPlayer)
+		end
+		currentTarget = S.LockedTargetPlr
 	elseif S.Aim2D then
-		S.Target = getClosestToCrosshair(is2DNPC)
+		currentTarget = getClosestToCrosshair(is2DNPC)
 	else
-		S.Target = nil
+		S.LockedTargetNPC = nil
+		S.LockedTargetPlr = nil
 	end
 
-	if S.Target then
-		local p = getHeadPos(S.Target)
+	if currentTarget then
+		local p = getHeadPos(currentTarget)
 		if p then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, p) end
 	end
 
