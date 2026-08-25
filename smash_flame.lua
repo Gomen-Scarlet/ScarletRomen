@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Final Ultimate)
+-- Name: ScarletRomen (Final Ultimate - Fix Visual UI)
 -- Type: LocalScript (Đặt trong StarterPlayerScripts hoặc StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -13,7 +13,7 @@ local Camera = Workspace.CurrentCamera
 local CONFIG = {
 	NPC_AIM_RANGE = 5000,
 	LOGO_ID = "rbxassetid://133227737824937",
-	COLOR_THEME = Color3.fromRGB(225, 30, 30), -- Viền/Line màu đỏ
+	COLOR_THEME = Color3.fromRGB(255, 30, 30), -- Viền đỏ tươi
 	COLOR_NPC_ESP = Color3.fromRGB(255, 215, 0), -- Vàng
 	COLOR_ENEMY_ESP = Color3.fromRGB(255, 40, 40), -- Đỏ
 	COLOR_ALLY_ESP = Color3.fromRGB(40, 255, 40), -- Xanh lá
@@ -25,7 +25,7 @@ local State = {
 	AimPlayer = false,
 	EspNPC = false,
 	EspPlayer = false,
-	LockedTarget = nil -- Can be Model (NPC) or Player
+	LockedTarget = nil
 }
 
 ----------------------------------------------------------------
@@ -66,52 +66,67 @@ screenGui.Name = "ScarletRomenUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- 1. HỒNG TÂM DẤU "+" MÀU XÁM
+-- 1. HỒNG TÂM DẤU "+" MÀU XÁM (FIX CHUẨN TÂM MÀN HÌNH)
 local crosshairFrame = Instance.new("Frame")
 crosshairFrame.Name = "Crosshair"
-crosshairFrame.Size = UDim2.new(0, 16, 0, 16)
-crosshairFrame.Position = UDim2.new(0.5, -8, 0.5, -8)
+crosshairFrame.Size = UDim2.new(0, 14, 0, 14)
+crosshairFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+crosshairFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 crosshairFrame.BackgroundTransparency = 1
 crosshairFrame.Parent = screenGui
 
 local chHorizontal = Instance.new("Frame")
 chHorizontal.Size = UDim2.new(1, 0, 0, 2)
 chHorizontal.Position = UDim2.new(0, 0, 0.5, -1)
-chHorizontal.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+chHorizontal.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
 chHorizontal.BorderSizePixel = 0
 chHorizontal.Parent = crosshairFrame
 
 local chVertical = Instance.new("Frame")
 chVertical.Size = UDim2.new(0, 2, 1, 0)
 chVertical.Position = UDim2.new(0.5, -1, 0, 0)
-chVertical.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+chVertical.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
 chVertical.BorderSizePixel = 0
 chVertical.Parent = crosshairFrame
 
--- 2. LOGO ICON (DRAGGABLE)
-local logoButton = Instance.new("ImageButton")
-logoButton.Name = "LogoButton"
-logoButton.Size = UDim2.new(0, 45, 0, 45)
-logoButton.Position = UDim2.new(0.05, 0, 0.2, 0)
-logoButton.Image = CONFIG.LOGO_ID
-logoButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-logoButton.BorderSizePixel = 2
-logoButton.BorderColor3 = CONFIG.COLOR_THEME
-logoButton.Parent = screenGui
-makeDraggable(logoButton)
+-- 2. LOGO ICON VỚI VIỀN ĐỎ (DRAGGABLE & FIX ẢNH RÕ)
+local logoContainer = Instance.new("Frame")
+logoContainer.Name = "LogoContainer"
+logoContainer.Size = UDim2.new(0, 50, 0, 50)
+logoContainer.Position = UDim2.new(0.05, 0, 0.2, 0)
+logoContainer.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+logoContainer.Parent = screenGui
+makeDraggable(logoContainer)
 
 local logoCorner = Instance.new("UICorner")
 logoCorner.CornerRadius = UDim.new(0, 8)
-logoCorner.Parent = logoButton
+logoCorner.Parent = logoContainer
+
+-- Viền đỏ cho logo
+local logoStroke = Instance.new("UIStroke")
+logoStroke.Color = CONFIG.COLOR_THEME
+logoStroke.Thickness = 2
+logoStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+logoStroke.Parent = logoContainer
+
+local logoButton = Instance.new("ImageButton")
+logoButton.Name = "LogoButton"
+logoButton.Size = UDim2.new(1, -6, 1, -6)
+logoButton.Position = UDim2.new(0, 3, 0, 3)
+logoButton.Image = CONFIG.LOGO_ID
+logoButton.BackgroundTransparency = 1
+logoButton.Parent = logoContainer
+
+local logoBtnCorner = Instance.new("UICorner")
+logoBtnCorner.CornerRadius = UDim.new(0, 6)
+logoBtnCorner.Parent = logoButton
 
 -- 3. MAIN MENU TAB (DRAGGABLE)
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 240, 0, 280)
-mainFrame.Position = UDim2.new(0.1, 0, 0.2, 0)
+mainFrame.Position = UDim2.new(0.12, 0, 0.2, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-mainFrame.BorderSizePixel = 2
-mainFrame.BorderColor3 = CONFIG.COLOR_THEME
 mainFrame.Visible = true
 mainFrame.Parent = screenGui
 makeDraggable(mainFrame)
@@ -119,6 +134,12 @@ makeDraggable(mainFrame)
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 8)
 mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = CONFIG.COLOR_THEME
+mainStroke.Thickness = 2
+mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+mainStroke.Parent = mainFrame
 
 -- Title Bar
 local titleLabel = Instance.new("TextLabel")
@@ -138,16 +159,16 @@ line.BorderSizePixel = 0
 line.Parent = mainFrame
 
 -- Container chứa 4 nút
-local buttonsLayout = Instance.new("UIListLayout")
-buttonsLayout.Padding = UDim.new(0, 8)
-buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
 local container = Instance.new("Frame")
 container.Size = UDim2.new(1, 0, 1, -50)
 container.Position = UDim2.new(0, 0, 0, 50)
 container.BackgroundTransparency = 1
 container.Parent = mainFrame
+
+local buttonsLayout = Instance.new("UIListLayout")
+buttonsLayout.Padding = UDim.new(0, 8)
+buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 buttonsLayout.Parent = container
 
 -- Toggle Menu qua Logo
@@ -186,7 +207,6 @@ local function removeHighlight(model, name)
 	if esp then esp:Destroy() end
 end
 
--- Cập nhật ESP NPC
 local function refreshNpcESP()
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if isValidNPC(obj) then
@@ -199,7 +219,6 @@ local function refreshNpcESP()
 	end
 end
 
--- Cập nhật ESP Player (Tự phân loại Enemy/Ally)
 local function refreshPlayerESP()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
@@ -214,7 +233,6 @@ local function refreshPlayerESP()
 	end
 end
 
--- Tự động áp dụng ESP khi có NPC/Player mới xuất hiện (Chống lag)
 Workspace.DescendantAdded:Connect(function(obj)
 	if State.EspNPC and isValidNPC(obj) then
 		applyHighlight(obj, CONFIG.COLOR_NPC_ESP, "SR_NPC_ESP")
@@ -310,7 +328,6 @@ local function createSkillButton(order, text, onClick)
 	end)
 end
 
--- BẬT/TẮT CÁC SKILL
 createSkillButton(1, "Skill 1 (Aim NPC)", function()
 	State.AimNPC = not State.AimNPC
 	if State.AimNPC then
