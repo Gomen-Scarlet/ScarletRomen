@@ -1,4 +1,4 @@
--- Name: smash flame (Fixed POV & Character Sync Engine)
+-- Name: smash flame (Smooth Camera Aim Fix)
 -- Type: LocalScript (StarterPlayerScripts / StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -18,6 +18,7 @@ local settings = {
 }
 
 local MAX_DISTANCE = 1500
+local AIM_SMOOTHNESS = 0.25 -- Độ mượt của Aim (Càng nhỏ càng mượt, tránh khóa cứng Camera)
 
 --------------------------------------------------------------------------------
 -- 1. UI DRAGGABLE & TAB FIX
@@ -86,7 +87,6 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
--- Tạo Buttons
 local function createSkillButton(name, text, order)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
@@ -130,7 +130,7 @@ toggleMenuBtn.MouseButton1Click:Connect(function()
 end)
 
 --------------------------------------------------------------------------------
--- 2. HỆ THỐNG ESP & CACHE
+-- 2. ESP & CACHE
 --------------------------------------------------------------------------------
 local function updateButtonVisual(btn, state, activeText, inactiveText)
 	btn.Text = state and activeText or inactiveText
@@ -238,7 +238,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 3. FIX POV & ABSOLUTE LOCK ENGINE
+-- 3. SỬA LỖI KHÓA CỨNG CAMERA (SMOOTH AIM ENGINE)
 --------------------------------------------------------------------------------
 local function getAimTarget(isSearchingPlayer)
 	local closestHead = nil
@@ -279,7 +279,7 @@ local function getAimTarget(isSearchingPlayer)
 	return closestHead
 end
 
--- RenderStepped xử lý đồng bộ Camera + HumanoidRootPart
+-- Dùng RenderStepped kết hợp CFrame:Lerp để tạo chuyển động xoay tự nhiên
 RunService.RenderStepped:Connect(function()
 	local targetHead = nil
 	
@@ -290,21 +290,8 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	if targetHead then
-		local character = LocalPlayer.Character
-		if character then
-			local rootPart = character:FindFirstChild("HumanoidRootPart")
-			
-			-- 1. Xoay Camera về mục tiêu (giữ nguyên khoảng cách Camera hiện tại)
-			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
-			
-			-- 2. SỬA LỖI POV: Xoay luôn Thân Nhân Vật theo trục Y (tránh vỡ dáng/POV tách biệt)
-			if rootPart then
-				local targetPos = Vector2.new(targetHead.Position.X, targetHead.Position.Z)
-				local rootPos = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
-				local angle = math.atan2(targetPos.X - rootPos.X, targetPos.Y - rootPos.Y)
-				
-				rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.Angles(0, angle, 0)
-			end
-		end
+		local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
+		-- Dùng Lerp để vừa hít tâm vừa cho phép người chơi xoay chuyển động linh hoạt
+		Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, AIM_SMOOTHNESS)
 	end
 end)
