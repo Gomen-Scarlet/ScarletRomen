@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Final Ultimate - 2D NPC Support & Drag Fix)
+-- Name: ScarletRomen (Final Ultimate - Fixed ESP 2D & UI Scroll)
 -- Type: LocalScript (Đặt trong StarterPlayerScripts hoặc StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -11,7 +11,7 @@ local Camera = Workspace.CurrentCamera
 
 -- CONFIGURATIONS
 local CONFIG = {
-	NPC_AIM_RANGE = 5000,
+	NPC_AIM_RANGE = 4000,
 	LOGO_ID = "rbxassetid://133227737824937",
 	COLOR_THEME = Color3.fromRGB(255, 30, 30), -- Viền đỏ tươi
 	COLOR_NPC_ESP = Color3.fromRGB(255, 215, 0), -- Vàng (NPC 3D)
@@ -32,7 +32,7 @@ local State = {
 }
 
 ----------------------------------------------------------------
--- HELPER: FIXED DRAGGABLE SYSTEM
+-- HELPER: DRAGGABLE SYSTEM
 ----------------------------------------------------------------
 local function makeDraggable(guiObject)
 	local dragging, dragInput, dragStart, startPos
@@ -69,7 +69,7 @@ screenGui.Name = "ScarletRomenUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- 1. HỒNG TÂM DẤU "+" MÀU XÁM (CHUẨN TÂM MÀN HÌNH)
+-- 1. HỒNG TÂM DẤU "+" MÀU XÁM (CĂN GIỮA MÀN HÌNH)
 local crosshairFrame = Instance.new("Frame")
 crosshairFrame.Name = "Crosshair"
 crosshairFrame.Size = UDim2.new(0, 14, 0, 14)
@@ -92,10 +92,10 @@ chVertical.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
 chVertical.BorderSizePixel = 0
 chVertical.Parent = crosshairFrame
 
--- 2. LOGO CONTAINER (VIỀN ĐỎ + CHỮ "S" + DRAGGABLE)
+-- 2. LOGO CONTAINER (VIỀN ĐỎ + CHỮ "S")
 local logoContainer = Instance.new("Frame")
 logoContainer.Name = "LogoContainer"
-logoContainer.Size = UDim2.new(0, 50, 0, 50)
+logoContainer.Size = UDim2.new(0, 48, 0, 48)
 logoContainer.Position = UDim2.new(0.05, 0, 0.2, 0)
 logoContainer.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 logoContainer.Parent = screenGui
@@ -113,29 +113,28 @@ logoStroke.Parent = logoContainer
 
 local logoButton = Instance.new("ImageButton")
 logoButton.Name = "LogoButton"
-logoButton.Size = UDim2.new(1, -6, 1, -6)
-logoButton.Position = UDim2.new(0, 3, 0, 3)
+logoButton.Size = UDim2.new(1, -4, 1, -4)
+logoButton.Position = UDim2.new(0, 2, 0, 2)
 logoButton.Image = CONFIG.LOGO_ID
 logoButton.BackgroundTransparency = 1
 logoButton.Parent = logoContainer
 
--- Chữ S chính giữa Logo
 local sLabel = Instance.new("TextLabel")
 sLabel.Name = "SLabel"
 sLabel.Size = UDim2.new(1, 0, 1, 0)
 sLabel.BackgroundTransparency = 1
 sLabel.Text = "S"
 sLabel.TextColor3 = CONFIG.COLOR_THEME
-sLabel.TextSize = 24
+sLabel.TextSize = 22
 sLabel.Font = Enum.Font.SourceSansBold
 sLabel.TextStrokeTransparency = 0
 sLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 sLabel.Parent = logoButton
 
--- 3. MAIN MENU TAB (DRAGGABLE)
+-- 3. MAIN MENU TAB (NGẮN GỌN + THANH TRƯỢT)
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 240, 0, 360)
+mainFrame.Size = UDim2.new(0, 230, 0, 250) -- Chiều cao ngắn (chứa đủ 4 nút)
 mainFrame.Position = UDim2.new(0.12, 0, 0.2, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainFrame.Visible = true
@@ -152,40 +151,59 @@ mainStroke.Thickness = 2
 mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mainStroke.Parent = mainFrame
 
+-- Tiêu đề
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 0, 40)
+titleLabel.Size = UDim2.new(1, 0, 0, 36)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "ScarletRomen (Final Ultimate)"
 titleLabel.TextColor3 = CONFIG.COLOR_THEME
-titleLabel.TextSize = 14
+titleLabel.TextSize = 13
 titleLabel.Font = Enum.Font.SourceSansBold
 titleLabel.Parent = mainFrame
 
 local line = Instance.new("Frame")
-line.Size = UDim2.new(1, -20, 0, 2)
-line.Position = UDim2.new(0, 10, 0, 40)
+line.Size = UDim2.new(1, -16, 0, 2)
+line.Position = UDim2.new(0, 8, 0, 36)
 line.BackgroundColor3 = CONFIG.COLOR_THEME
 line.BorderSizePixel = 0
 line.Parent = mainFrame
 
-local container = Instance.new("Frame")
-container.Size = UDim2.new(1, 0, 1, -50)
-container.Position = UDim2.new(0, 0, 0, 50)
-container.BackgroundTransparency = 1
-container.Parent = mainFrame
+-- Thanh trượt (ScrollingFrame)
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "ScrollContainer"
+scrollFrame.Size = UDim2.new(1, 0, 1, -60)
+scrollFrame.Position = UDim2.new(0, 0, 0, 38)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 270) -- Đủ sức chứa nhiều skill hơn
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = CONFIG.COLOR_THEME
+scrollFrame.Parent = mainFrame
 
 local buttonsLayout = Instance.new("UIListLayout")
 buttonsLayout.Padding = UDim.new(0, 6)
 buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-buttonsLayout.Parent = container
+buttonsLayout.Parent = scrollFrame
 
+-- Footer Credit
+local footerLabel = Instance.new("TextLabel")
+footerLabel.Name = "Footer"
+footerLabel.Size = UDim2.new(1, 0, 0, 20)
+footerLabel.Position = UDim2.new(0, 0, 1, -20)
+footerLabel.BackgroundTransparency = 1
+footerLabel.Text = "by: Scarlet Romen"
+footerLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+footerLabel.TextSize = 11
+footerLabel.Font = Enum.Font.SourceSansItalic
+footerLabel.Parent = mainFrame
+
+-- Event Toggle Menu
 logoButton.MouseButton1Click:Connect(function()
 	mainFrame.Visible = not mainFrame.Visible
 end)
 
 ----------------------------------------------------------------
--- UTILITY FUNCTIONS & CHECK LOGIC
+-- CHECK LOGIC (FIX LỖI ESP TƯỜNG)
 ----------------------------------------------------------------
 local function isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
@@ -195,25 +213,28 @@ local function isValidNPC(model)
 	return humanoid and head and humanoid.Health > 0
 end
 
--- Kiểm tra NPC dạng ảnh 2D / Decal / BillboardGUI
+-- Lọc NPC 2D chuẩn xác, loại bỏ tường xây dựng
 local function isValid2DNPC(obj)
 	if not obj then return false end
 	if Players:GetPlayerFromCharacter(obj) then return false end
 	
-	local hasImage = false
+	-- Loại bỏ các kiến trúc tường / sàn / nhà cửa phổ biến trong studio
+	local nameLower = string.lower(obj.Name)
+	if string.find(nameLower, "wall") or string.find(nameLower, "tuong") or string.find(nameLower, "part") or string.find(nameLower, "baseplate") or string.find(nameLower, "building") then
+		return false
+	end
+
+	local has2DVisual = false
 	if obj:IsA("Decal") or obj:IsA("Texture") or obj:IsA("ImageLabel") or obj:IsA("BillboardGui") then
-		hasImage = true
+		has2DVisual = true
 	elseif obj:IsA("BasePart") or obj:IsA("Model") then
 		if obj:FindFirstChildOfClass("Decal") or obj:FindFirstChildOfClass("Texture") or obj:FindFirstChildOfClass("BillboardGui") then
-			hasImage = true
+			has2DVisual = true
 		end
 	end
 	
-	-- Không phải nhân vật 3D thông thường
-	if hasImage and not isValidNPC(obj) then
-		return true
-	end
-	return false
+	-- Chỉ nhận nếu có thuộc tính 2D và KHÔNG PHẢI là NPC 3D có Humanoid
+	return has2DVisual and not isValidNPC(obj)
 end
 
 local function getTargetPosition(obj)
@@ -222,15 +243,9 @@ local function getTargetPosition(obj)
 	elseif obj:IsA("Model") then
 		return (obj.PrimaryPart and obj.PrimaryPart.Position) or (obj:FindFirstChild("Head") and obj.Head.Position) or obj:GetPivot().Position
 	elseif obj:IsA("Decal") or obj:IsA("Texture") then
-		if obj.Parent and obj.Parent:IsA("BasePart") then
-			return obj.Parent.Position
-		end
+		return obj.Parent and obj.Parent:IsA("BasePart") and obj.Parent.Position or nil
 	elseif obj:IsA("BillboardGui") then
-		if obj.Adornee then
-			return obj.Adornee.Position
-		elseif obj.Parent and obj.Parent:IsA("BasePart") then
-			return obj.Parent.Position
-		end
+		return obj.Adornee and obj.Adornee.Position or (obj.Parent and obj.Parent:IsA("BasePart") and obj.Parent.Position) or nil
 	end
 	return nil
 end
@@ -270,12 +285,12 @@ end
 local function refresh2DNpcESP()
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if isValid2DNPC(obj) then
-			local targetModel = obj:IsA("Model") and obj or obj.Parent
-			if targetModel and (targetModel:IsA("Model") or targetModel:IsA("BasePart")) then
+			local targetObj = (obj:IsA("Model") or obj:IsA("BasePart")) and obj or obj.Parent
+			if targetObj and (targetObj:IsA("Model") or targetObj:IsA("BasePart")) then
 				if State.EspNPC2D then
-					applyHighlight(targetModel, CONFIG.COLOR_NPC_2D_ESP, "SR_NPC_2D_ESP")
+					applyHighlight(targetObj, CONFIG.COLOR_NPC_2D_ESP, "SR_NPC_2D_ESP")
 				else
-					removeHighlight(targetModel, "SR_NPC_2D_ESP")
+					removeHighlight(targetObj, "SR_NPC_2D_ESP")
 				end
 			end
 		end
@@ -372,14 +387,14 @@ end
 local function createSkillButton(order, text, onClick)
 	local btn = Instance.new("TextButton")
 	btn.Name = "SkillButton_" .. order
-	btn.Size = UDim2.new(0, 200, 0, 36)
+	btn.Size = UDim2.new(0, 195, 0, 36)
 	btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	btn.Text = text .. ": OFF"
 	btn.TextColor3 = Color3.fromRGB(200, 200, 200)
 	btn.Font = Enum.Font.SourceSansBold
 	btn.TextSize = 13
 	btn.LayoutOrder = order
-	btn.Parent = container
+	btn.Parent = scrollFrame
 
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 6)
