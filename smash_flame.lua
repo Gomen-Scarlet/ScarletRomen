@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Closest Range Head Aim Edition)
+-- Name: ScarletRomen (Compact & Rainbow Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -18,10 +18,23 @@ local CFG = {
 	STROKE = Color3.fromRGB(0, 40, 120)
 }
 
-local S = {AimNPC=false, AimPlr=false, Aim2D=false, EspNPC=false, EspNPC2D=false, EspPlr=false, EspName=false, Fps=false, Bright=false, Ultra=false, Target=nil}
+local S = {
+	AimNPC = false, 
+	AimPlr = false, 
+	AimPlrWall = false, 
+	Aim2D = false, 
+	EspNPC = false, 
+	EspNPC2D = false, 
+	EspPlr = false, 
+	EspName = false, 
+	Fps = false, 
+	Bright = false, 
+	Ultra = false, 
+	Target = nil
+}
 
 ----------------------------------------------------------------
--- GUI BASE (KHÔNG BỊ LỆCH BỞI TOPBAR ROBLOX)
+-- GUI BASE
 ----------------------------------------------------------------
 local SG = Instance.new("ScreenGui")
 SG.Name = "ScarletRomenUI"
@@ -30,21 +43,35 @@ SG.IgnoreGuiInset = true
 SG.ScreenInsets = Enum.ScreenInsets.None
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local function drag(o)
-	local d, s, p
-	o.InputBegan:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-			d, s, p = true, inp.Position, o.Position
+local function makeDraggable(guiObject)
+	local dragging = false
+	local dragInput, dragStart, startPos
+
+	guiObject.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = guiObject.Position
+
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
 		end
 	end)
-	UserInputService.InputChanged:Connect(function(inp)
-		if d and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-			local delta = inp.Position - s
-			o.Position = UDim2.new(p.X.Scale, p.X.Offset + delta.X, p.Y.Scale, p.Y.Offset + delta.Y)
+
+	guiObject.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
 		end
 	end)
-	UserInputService.InputEnded:Connect(function(inp)
-		if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then d = false end
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
 	end)
 end
 
@@ -62,46 +89,54 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- LOGO
-local Logo = Instance.new("Frame", SG) Logo.Size, Logo.Position, Logo.BackgroundColor3 = UDim2.new(0, 40, 0, 40), UDim2.new(0.05, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) drag(Logo)
+-- LOGO DRAGGABLE
+local Logo = Instance.new("Frame", SG) 
+Logo.Size, Logo.Position, Logo.BackgroundColor3 = UDim2.new(0, 36, 0, 36), UDim2.new(0.05, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) 
+makeDraggable(Logo)
 Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 8)
 local LSt = Instance.new("UIStroke", Logo) LSt.Color, LSt.Thickness = CFG.THEME, 2
-local LogoBtn = Instance.new("TextButton", Logo) LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 20
 
--- MAIN UI
-local Main = Instance.new("Frame", SG) Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 210, 0, 140), UDim2.new(0.12, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) drag(Main)
+local LogoBtn = Instance.new("TextButton", Logo) 
+LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 18
+
+-- MAIN UI (FIX CHIỀU CAO 120PX, CỐ ĐỊNH KHÔNG BỊ GIÃN)
+local Main = Instance.new("Frame", SG) 
+Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 200, 0, 120), UDim2.new(0.12, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) 
+Main.ClipsDescendants = true
+makeDraggable(Main)
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
 local MSt = Instance.new("UIStroke", Main) MSt.Color, MSt.Thickness = CFG.THEME, 2
+
 LogoBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
 
 local MainScroll = Instance.new("ScrollingFrame", Main)
-MainScroll.Size, MainScroll.Position, MainScroll.BackgroundTransparency, MainScroll.ScrollBarThickness = UDim2.new(1, -6, 1, -20), UDim2.new(0, 3, 0, 4), 1, 3
+MainScroll.Size, MainScroll.Position, MainScroll.BackgroundTransparency, MainScroll.ScrollBarThickness = UDim2.new(1, -6, 1, -18), UDim2.new(0, 3, 0, 4), 1, 3
 MainScroll.ScrollBarImageColor3 = CFG.THEME
 MainScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 MainScroll.CanvasSize = UDim2.new(0,0,0,0)
 
 local MainLayout = Instance.new("UIListLayout", MainScroll)
-MainLayout.Padding = UDim.new(0, 4)
+MainLayout.Padding = UDim.new(0, 3)
 MainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local Footer = Instance.new("TextLabel", Main)
-Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 14), UDim2.new(0, 0, 1, -14), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
+Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 12), UDim2.new(0, 0, 1, -12), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
 
 ----------------------------------------------------------------
 -- TAB SYSTEM
 ----------------------------------------------------------------
 local function createTabHeader(title, layoutOrder)
 	local btn = Instance.new("TextButton", MainScroll)
-	btn.Size = UDim2.new(1, -6, 0, 28)
+	btn.Size = UDim2.new(1, -6, 0, 24)
 	btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 	btn.Text = "  " .. title .. " [ + ]"
 	btn.TextColor3 = Color3.fromRGB(220, 220, 220)
 	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 12
+	btn.TextSize = 11
 	btn.TextXAlignment = Enum.TextXAlignment.Left
 	btn.LayoutOrder = layoutOrder
 
-	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
 	local st = Instance.new("UIStroke", btn) st.Color = CFG.THEME st.Thickness = 1
 
 	local container = Instance.new("Frame", MainScroll)
@@ -130,7 +165,7 @@ local T1Container = createTabHeader("Vision", 1)
 local T2Container = createTabHeader("Liminal", 3)
 
 ----------------------------------------------------------------
--- LOGICS & TARGET FINDERS (RANGE THEO KHOẢNG CÁCH 3D GẦN NHẤT)
+-- LOGICS & TARGET FINDERS
 ----------------------------------------------------------------
 local function isNPC(m)
 	return m and m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m:FindFirstChildOfClass("Humanoid") and m:FindFirstChildOfClass("Humanoid").Health > 0 and (m:FindFirstChild("Head") or m.PrimaryPart)
@@ -170,7 +205,6 @@ local function toggleHL(m, color, name, on, trans)
 	end
 end
 
--- Tối ưu: Lấy vị trí nhân vật hiện tại của người dùng
 local function getMyPos()
 	local char = LocalPlayer.Character
 	if char then
@@ -180,8 +214,24 @@ local function getMyPos()
 	return Camera.CFrame.Position
 end
 
--- Tìm mục tiêu dựa trên khoảng cách 3D gần nhân vật nhất
-local function getClosestByRange(chkFunc)
+local function isVisible(targetHeadPos, targetModel)
+	local origin = Camera.CFrame.Position
+	local direction = targetHeadPos - origin
+	local params = RaycastParams.new()
+	params.FilterType = RaycastFilterType.Exclude
+
+	local ignoreList = {}
+	if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+	params.FilterDescendantsInstances = ignoreList
+
+	local result = Workspace:Raycast(origin, direction, params)
+	if result then
+		return result.Instance:IsDescendantOf(targetModel)
+	end
+	return true
+end
+
+local function getClosestByRange(chkFunc, checkWall)
 	local cl, sDist = nil, math.huge
 	local myPos = getMyPos()
 
@@ -191,8 +241,10 @@ local function getClosestByRange(chkFunc)
 			if p then
 				local dist = (p - myPos).Magnitude
 				if dist < sDist then
-					sDist = dist
-					cl = v
+					if not checkWall or isVisible(p, v) then
+						sDist = dist
+						cl = v
+					end
 				end
 			end
 		end
@@ -202,19 +254,20 @@ end
 
 local function createSkillButton(parent, text, cb)
 	local b = Instance.new("TextButton", parent)
-	b.Size = UDim2.new(1, 0, 0, 26)
+	b.Size = UDim2.new(1, 0, 0, 24)
 	b.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 	b.Text = text .. ": OFF"
 	b.TextColor3 = Color3.fromRGB(200, 200, 200)
 	b.Font = Enum.Font.SourceSansBold
-	b.TextSize = 11
+	b.TextSize = 10
 
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
 	b.MouseButton1Click:Connect(function()
 		local st = cb()
 		b.Text = text .. (st and ": ON" or ": OFF")
 		b.BackgroundColor3 = st and CFG.THEME or Color3.fromRGB(35, 35, 35)
 	end)
+	return b
 end
 
 ----------------------------------------------------------------
@@ -222,13 +275,19 @@ end
 ----------------------------------------------------------------
 -- TAB 1: VISION
 createSkillButton(T1Container, "Skill 1 (Aim NPC Range)", function()
-	S.AimNPC = not S.AimNPC S.AimPlr, S.Aim2D = false, false
+	S.AimNPC = not S.AimNPC S.AimPlr, S.AimPlrWall, S.Aim2D = false, false, false
 	return S.AimNPC
 end)
 
-createSkillButton(T1Container, "Skill 2 (Aim Player Range)", function()
-	S.AimPlr = not S.AimPlr S.AimNPC, S.Aim2D = false, false
+createSkillButton(T1Container, "Skill 2 (Aim Plr Visible)", function()
+	S.AimPlr = not S.AimPlr S.AimNPC, S.AimPlrWall, S.Aim2D = false, false, false
 	return S.AimPlr
+end)
+
+-- Skill 2.5 với NÚT MÀU CẦU VỒNG (RAINBOW EFFECT)
+local RainbowBtn = createSkillButton(T1Container, "Skill 2.5 (Aim Plr Wall)", function()
+	S.AimPlrWall = not S.AimPlrWall S.AimNPC, S.AimPlr, S.Aim2D = false, false, false
+	return S.AimPlrWall
 end)
 
 createSkillButton(T1Container, "Skill 3 (ESP NPC)", function()
@@ -252,7 +311,7 @@ createSkillButton(T1Container, "Skill 4 (ESP Player)", function()
 end)
 
 createSkillButton(T1Container, "Skill 5 (Aim NPC 2D)", function()
-	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr = false, false
+	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr, S.AimPlrWall = false, false, false
 	return S.Aim2D
 end)
 
@@ -284,22 +343,36 @@ createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 end)
 
 ----------------------------------------------------------------
--- RENDER LOOP (CẬP NHẬT MỤC TIÊU GẦN NHẤT THEO REALTIME)
+-- RENDER LOOP (CẦU VỒNG + AIM REALTIME)
 ----------------------------------------------------------------
 local frames, lastT = 0, tick()
+local hue = 0
+
 RunService.RenderStepped:Connect(function()
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
-	-- Xử lý Cập nhật & Khóa Aim vào mục tiêu có Range gần nhất
+	-- Hiệu ứng Rainbow cho Skill 2.5 khi bật
+	if S.AimPlrWall then
+		hue = (hue + 0.005) % 1
+		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
+		RainbowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		RainbowBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+	end
+
+	local checkPlrFunc = function(v)
+		return v:IsA("Model") and Players:GetPlayerFromCharacter(v) and v ~= LocalPlayer.Character and v:FindFirstChildOfClass("Humanoid") and v:FindFirstChildOfClass("Humanoid").Health > 0
+	end
+
 	if S.AimNPC then
-		S.Target = getClosestByRange(isNPC)
+		S.Target = getClosestByRange(isNPC, false)
 	elseif S.AimPlr then
-		S.Target = getClosestByRange(function(v)
-			return v:IsA("Model") and Players:GetPlayerFromCharacter(v) and v ~= LocalPlayer.Character and v:FindFirstChildOfClass("Humanoid") and v:FindFirstChildOfClass("Humanoid").Health > 0
-		end)
+		S.Target = getClosestByRange(checkPlrFunc, true)
+	elseif S.AimPlrWall then
+		S.Target = getClosestByRange(checkPlrFunc, false)
 	elseif S.Aim2D then
-		S.Target = getClosestByRange(is2DNPC)
+		S.Target = getClosestByRange(is2DNPC, false)
 	else
 		S.Target = nil
 	end
