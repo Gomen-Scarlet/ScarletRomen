@@ -561,4 +561,12 @@ RunService.RenderStepped:Connect(function()
 			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, State.LockedTarget.Head.Position)
 		end
 	elseif State.AimNPC2D then
-		if not State.LockedTarget or not isValid2DN
+		if not State.LockedTarget or not isValid2DNPC(State.LockedTarget) then
+			State.LockedTarget = getClosest2DNPC()
+		end
+		if State.LockedTarget then
+			local pos = getTargetPosition(State.LockedTarget)
+			if pos then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, pos) end
+		end
+	end
+end)
