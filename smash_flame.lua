@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Final Ultimate - Fix Visual UI)
+-- Name: ScarletRomen (Final Ultimate - 2D NPC Support & Drag Fix)
 -- Type: LocalScript (Đặt trong StarterPlayerScripts hoặc StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -14,7 +14,8 @@ local CONFIG = {
 	NPC_AIM_RANGE = 5000,
 	LOGO_ID = "rbxassetid://133227737824937",
 	COLOR_THEME = Color3.fromRGB(255, 30, 30), -- Viền đỏ tươi
-	COLOR_NPC_ESP = Color3.fromRGB(255, 215, 0), -- Vàng
+	COLOR_NPC_ESP = Color3.fromRGB(255, 215, 0), -- Vàng (NPC 3D)
+	COLOR_NPC_2D_ESP = Color3.fromRGB(0, 150, 255), -- Xanh dương (NPC 2D)
 	COLOR_ENEMY_ESP = Color3.fromRGB(255, 40, 40), -- Đỏ
 	COLOR_ALLY_ESP = Color3.fromRGB(40, 255, 40), -- Xanh lá
 }
@@ -23,13 +24,15 @@ local CONFIG = {
 local State = {
 	AimNPC = false,
 	AimPlayer = false,
+	AimNPC2D = false,
 	EspNPC = false,
 	EspPlayer = false,
+	EspNPC2D = false,
 	LockedTarget = nil
 }
 
 ----------------------------------------------------------------
--- HELPER: DRAGGABLE SYSTEM
+-- HELPER: FIXED DRAGGABLE SYSTEM
 ----------------------------------------------------------------
 local function makeDraggable(guiObject)
 	local dragging, dragInput, dragStart, startPos
@@ -66,7 +69,7 @@ screenGui.Name = "ScarletRomenUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- 1. HỒNG TÂM DẤU "+" MÀU XÁM (FIX CHUẨN TÂM MÀN HÌNH)
+-- 1. HỒNG TÂM DẤU "+" MÀU XÁM (CHUẨN TÂM MÀN HÌNH)
 local crosshairFrame = Instance.new("Frame")
 crosshairFrame.Name = "Crosshair"
 crosshairFrame.Size = UDim2.new(0, 14, 0, 14)
@@ -89,7 +92,7 @@ chVertical.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
 chVertical.BorderSizePixel = 0
 chVertical.Parent = crosshairFrame
 
--- 2. LOGO ICON VỚI VIỀN ĐỎ (DRAGGABLE & FIX ẢNH RÕ)
+-- 2. LOGO CONTAINER (VIỀN ĐỎ + CHỮ "S" + DRAGGABLE)
 local logoContainer = Instance.new("Frame")
 logoContainer.Name = "LogoContainer"
 logoContainer.Size = UDim2.new(0, 50, 0, 50)
@@ -102,7 +105,6 @@ local logoCorner = Instance.new("UICorner")
 logoCorner.CornerRadius = UDim.new(0, 8)
 logoCorner.Parent = logoContainer
 
--- Viền đỏ cho logo
 local logoStroke = Instance.new("UIStroke")
 logoStroke.Color = CONFIG.COLOR_THEME
 logoStroke.Thickness = 2
@@ -117,14 +119,23 @@ logoButton.Image = CONFIG.LOGO_ID
 logoButton.BackgroundTransparency = 1
 logoButton.Parent = logoContainer
 
-local logoBtnCorner = Instance.new("UICorner")
-logoBtnCorner.CornerRadius = UDim.new(0, 6)
-logoBtnCorner.Parent = logoButton
+-- Chữ S chính giữa Logo
+local sLabel = Instance.new("TextLabel")
+sLabel.Name = "SLabel"
+sLabel.Size = UDim2.new(1, 0, 1, 0)
+sLabel.BackgroundTransparency = 1
+sLabel.Text = "S"
+sLabel.TextColor3 = CONFIG.COLOR_THEME
+sLabel.TextSize = 24
+sLabel.Font = Enum.Font.SourceSansBold
+sLabel.TextStrokeTransparency = 0
+sLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+sLabel.Parent = logoButton
 
 -- 3. MAIN MENU TAB (DRAGGABLE)
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 240, 0, 280)
+mainFrame.Size = UDim2.new(0, 240, 0, 360)
 mainFrame.Position = UDim2.new(0.12, 0, 0.2, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 mainFrame.Visible = true
@@ -141,7 +152,6 @@ mainStroke.Thickness = 2
 mainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 mainStroke.Parent = mainFrame
 
--- Title Bar
 local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, 0, 0, 40)
 titleLabel.BackgroundTransparency = 1
@@ -158,7 +168,6 @@ line.BackgroundColor3 = CONFIG.COLOR_THEME
 line.BorderSizePixel = 0
 line.Parent = mainFrame
 
--- Container chứa 4 nút
 local container = Instance.new("Frame")
 container.Size = UDim2.new(1, 0, 1, -50)
 container.Position = UDim2.new(0, 0, 0, 50)
@@ -166,18 +175,17 @@ container.BackgroundTransparency = 1
 container.Parent = mainFrame
 
 local buttonsLayout = Instance.new("UIListLayout")
-buttonsLayout.Padding = UDim.new(0, 8)
+buttonsLayout.Padding = UDim.new(0, 6)
 buttonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 buttonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 buttonsLayout.Parent = container
 
--- Toggle Menu qua Logo
 logoButton.MouseButton1Click:Connect(function()
 	mainFrame.Visible = not mainFrame.Visible
 end)
 
 ----------------------------------------------------------------
--- UTILITY FUNCTIONS & ESP LOGIC
+-- UTILITY FUNCTIONS & CHECK LOGIC
 ----------------------------------------------------------------
 local function isValidNPC(model)
 	if not model or not model:IsA("Model") then return false end
@@ -185,6 +193,46 @@ local function isValidNPC(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local head = model:FindFirstChild("Head") or model.PrimaryPart
 	return humanoid and head and humanoid.Health > 0
+end
+
+-- Kiểm tra NPC dạng ảnh 2D / Decal / BillboardGUI
+local function isValid2DNPC(obj)
+	if not obj then return false end
+	if Players:GetPlayerFromCharacter(obj) then return false end
+	
+	local hasImage = false
+	if obj:IsA("Decal") or obj:IsA("Texture") or obj:IsA("ImageLabel") or obj:IsA("BillboardGui") then
+		hasImage = true
+	elseif obj:IsA("BasePart") or obj:IsA("Model") then
+		if obj:FindFirstChildOfClass("Decal") or obj:FindFirstChildOfClass("Texture") or obj:FindFirstChildOfClass("BillboardGui") then
+			hasImage = true
+		end
+	end
+	
+	-- Không phải nhân vật 3D thông thường
+	if hasImage and not isValidNPC(obj) then
+		return true
+	end
+	return false
+end
+
+local function getTargetPosition(obj)
+	if obj:IsA("BasePart") then
+		return obj.Position
+	elseif obj:IsA("Model") then
+		return (obj.PrimaryPart and obj.PrimaryPart.Position) or (obj:FindFirstChild("Head") and obj.Head.Position) or obj:GetPivot().Position
+	elseif obj:IsA("Decal") or obj:IsA("Texture") then
+		if obj.Parent and obj.Parent:IsA("BasePart") then
+			return obj.Parent.Position
+		end
+	elseif obj:IsA("BillboardGui") then
+		if obj.Adornee then
+			return obj.Adornee.Position
+		elseif obj.Parent and obj.Parent:IsA("BasePart") then
+			return obj.Parent.Position
+		end
+	end
+	return nil
 end
 
 local function applyHighlight(model, color, name)
@@ -219,6 +267,21 @@ local function refreshNpcESP()
 	end
 end
 
+local function refresh2DNpcESP()
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if isValid2DNPC(obj) then
+			local targetModel = obj:IsA("Model") and obj or obj.Parent
+			if targetModel and (targetModel:IsA("Model") or targetModel:IsA("BasePart")) then
+				if State.EspNPC2D then
+					applyHighlight(targetModel, CONFIG.COLOR_NPC_2D_ESP, "SR_NPC_2D_ESP")
+				else
+					removeHighlight(targetModel, "SR_NPC_2D_ESP")
+				end
+			end
+		end
+	end
+end
+
 local function refreshPlayerESP()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
@@ -232,21 +295,6 @@ local function refreshPlayerESP()
 		end
 	end
 end
-
-Workspace.DescendantAdded:Connect(function(obj)
-	if State.EspNPC and isValidNPC(obj) then
-		applyHighlight(obj, CONFIG.COLOR_NPC_ESP, "SR_NPC_ESP")
-	end
-end)
-
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(char)
-		if State.EspPlayer then
-			task.wait(0.5)
-			refreshPlayerESP()
-		end
-	end)
-end)
 
 ----------------------------------------------------------------
 -- TARGET FINDERS
@@ -265,6 +313,29 @@ local function getClosestNPC()
 				if worldDist <= CONFIG.NPC_AIM_RANGE and mouseDist < shortestDist then
 					shortestDist = mouseDist
 					closest = obj
+				end
+			end
+		end
+	end
+	return closest
+end
+
+local function getClosest2DNPC()
+	local closest, shortestDist = nil, math.huge
+	local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if isValid2DNPC(obj) then
+			local pos = getTargetPosition(obj)
+			if pos then
+				local screenPos, onScreen = Camera:WorldToViewportPoint(pos)
+				if onScreen then
+					local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+					local worldDist = (pos - Camera.CFrame.Position).Magnitude
+					if worldDist <= CONFIG.NPC_AIM_RANGE and mouseDist < shortestDist then
+						shortestDist = mouseDist
+						closest = obj
+					end
 				end
 			end
 		end
@@ -301,12 +372,12 @@ end
 local function createSkillButton(order, text, onClick)
 	local btn = Instance.new("TextButton")
 	btn.Name = "SkillButton_" .. order
-	btn.Size = UDim2.new(0, 200, 0, 42)
+	btn.Size = UDim2.new(0, 200, 0, 36)
 	btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 	btn.Text = text .. ": OFF"
 	btn.TextColor3 = Color3.fromRGB(200, 200, 200)
 	btn.Font = Enum.Font.SourceSansBold
-	btn.TextSize = 14
+	btn.TextSize = 13
 	btn.LayoutOrder = order
 	btn.Parent = container
 
@@ -331,22 +402,18 @@ end
 createSkillButton(1, "Skill 1 (Aim NPC)", function()
 	State.AimNPC = not State.AimNPC
 	if State.AimNPC then
-		State.AimPlayer = false
+		State.AimPlayer, State.AimNPC2D = false, false
 		State.LockedTarget = getClosestNPC()
-	else
-		State.LockedTarget = nil
-	end
+	else State.LockedTarget = nil end
 	return State.AimNPC
 end)
 
 createSkillButton(2, "Skill 2 (Aim Player)", function()
 	State.AimPlayer = not State.AimPlayer
 	if State.AimPlayer then
-		State.AimNPC = false
+		State.AimNPC, State.AimNPC2D = false, false
 		State.LockedTarget = getClosestPlayer()
-	else
-		State.LockedTarget = nil
-	end
+	else State.LockedTarget = nil end
 	return State.AimPlayer
 end)
 
@@ -362,19 +429,30 @@ createSkillButton(4, "Skill 4 (ESP Player)", function()
 	return State.EspPlayer
 end)
 
+createSkillButton(5, "Skill 5 (Aim NPC 2D)", function()
+	State.AimNPC2D = not State.AimNPC2D
+	if State.AimNPC2D then
+		State.AimNPC, State.AimPlayer = false, false
+		State.LockedTarget = getClosest2DNPC()
+	else State.LockedTarget = nil end
+	return State.AimNPC2D
+end)
+
+createSkillButton(6, "Skill 6 (ESP NPC 2D)", function()
+	State.EspNPC2D = not State.EspNPC2D
+	refresh2DNpcESP()
+	return State.EspNPC2D
+end)
+
 ----------------------------------------------------------------
--- MAIN RENDER LOOP (HARD LOCK)
+-- MAIN RENDER LOOP
 ----------------------------------------------------------------
 RunService.RenderStepped:Connect(function()
 	if State.AimNPC then
-		if not isValidNPC(State.LockedTarget) then
-			State.LockedTarget = getClosestNPC()
-		end
+		if not isValidNPC(State.LockedTarget) then State.LockedTarget = getClosestNPC() end
 		if State.LockedTarget then
 			local head = State.LockedTarget:FindFirstChild("Head") or State.LockedTarget.PrimaryPart
-			if head then
-				Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position)
-			end
+			if head then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, head.Position) end
 		end
 	elseif State.AimPlayer then
 		if not State.LockedTarget or not State.LockedTarget:FindFirstChild("Head") or State.LockedTarget:FindFirstChildOfClass("Humanoid").Health <= 0 then
@@ -382,6 +460,14 @@ RunService.RenderStepped:Connect(function()
 		end
 		if State.LockedTarget and State.LockedTarget:FindFirstChild("Head") then
 			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, State.LockedTarget.Head.Position)
+		end
+	elseif State.AimNPC2D then
+		if not State.LockedTarget or not isValid2DNPC(State.LockedTarget) then
+			State.LockedTarget = getClosest2DNPC()
+		end
+		if State.LockedTarget then
+			local pos = getTargetPosition(State.LockedTarget)
+			if pos then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, pos) end
 		end
 	end
 end)
