@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Head Aim Edition)
+-- Name: ScarletRomen (Closest Range Head Aim Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -13,7 +13,7 @@ local CFG = {
 	NPC = Color3.fromRGB(255, 215, 0),
 	NPC2D = Color3.fromRGB(0, 150, 255),
 	PLR = Color3.fromRGB(255, 40, 40),
-	MY_BODY = Color3.fromRGB(170, 0, 255), -- Tím cho bản thân
+	MY_BODY = Color3.fromRGB(170, 0, 255),
 	NAME = Color3.fromRGB(0, 170, 255),
 	STROKE = Color3.fromRGB(0, 40, 120)
 }
@@ -26,7 +26,7 @@ local S = {AimNPC=false, AimPlr=false, Aim2D=false, EspNPC=false, EspNPC2D=false
 local SG = Instance.new("ScreenGui")
 SG.Name = "ScarletRomenUI"
 SG.ResetOnSpawn = false
-SG.IgnoreGuiInset = true -- Bỏ qua lề thanh hệ thống Roblox
+SG.IgnoreGuiInset = true
 SG.ScreenInsets = Enum.ScreenInsets.None
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -48,7 +48,7 @@ local function drag(o)
 	end)
 end
 
--- 1. HỒNG TÂM MỎNG & CĂN CHÍNH GIỮA MÀN HÌNH
+-- HỒNG TÂM MỎNG & CĂN CHÍNH GIỮA MÀN HÌNH
 local Cross = Instance.new("Frame", SG)
 Cross.Name = "Crosshair"
 Cross.Size = UDim2.fromOffset(12, 12)
@@ -62,13 +62,13 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- 2. LOGO
+-- LOGO
 local Logo = Instance.new("Frame", SG) Logo.Size, Logo.Position, Logo.BackgroundColor3 = UDim2.new(0, 40, 0, 40), UDim2.new(0.05, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) drag(Logo)
 Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 8)
 local LSt = Instance.new("UIStroke", Logo) LSt.Color, LSt.Thickness = CFG.THEME, 2
 local LogoBtn = Instance.new("TextButton", Logo) LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 20
 
--- 3. MAIN UI (CHIỀU CAO 140PX)
+-- MAIN UI
 local Main = Instance.new("Frame", SG) Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 210, 0, 140), UDim2.new(0.12, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) drag(Main)
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
 local MSt = Instance.new("UIStroke", Main) MSt.Color, MSt.Thickness = CFG.THEME, 2
@@ -130,7 +130,7 @@ local T1Container = createTabHeader("Vision", 1)
 local T2Container = createTabHeader("Liminal", 3)
 
 ----------------------------------------------------------------
--- LOGICS & TARGET FINDERS (LẤY VỊ TRÍ ĐẦU)
+-- LOGICS & TARGET FINDERS (RANGE THEO KHOẢNG CÁCH 3D GẦN NHẤT)
 ----------------------------------------------------------------
 local function isNPC(m)
 	return m and m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m:FindFirstChildOfClass("Humanoid") and m:FindFirstChildOfClass("Humanoid").Health > 0 and (m:FindFirstChild("Head") or m.PrimaryPart)
@@ -143,7 +143,6 @@ local function is2DNPC(o)
 	return o:IsA("Decal") or o:IsA("Texture") or o:IsA("BillboardGui")
 end
 
--- Tối ưu lấy vị trí ĐẦU (HEAD)
 local function getHeadPos(o)
 	if o:IsA("Model") then
 		local head = o:FindFirstChild("Head") or o.PrimaryPart
@@ -171,16 +170,29 @@ local function toggleHL(m, color, name, on, trans)
 	end
 end
 
-local function getClosest(chkFunc)
-	local cl, sDist, cntr = nil, math.huge, Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+-- Tối ưu: Lấy vị trí nhân vật hiện tại của người dùng
+local function getMyPos()
+	local char = LocalPlayer.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head") or char.PrimaryPart
+		if root then return root.Position end
+	end
+	return Camera.CFrame.Position
+end
+
+-- Tìm mục tiêu dựa trên khoảng cách 3D gần nhân vật nhất
+local function getClosestByRange(chkFunc)
+	local cl, sDist = nil, math.huge
+	local myPos = getMyPos()
+
 	for _, v in ipairs(Workspace:GetDescendants()) do
 		if chkFunc(v) then
 			local p = getHeadPos(v)
 			if p then
-				local sp, onS = Camera:WorldToViewportPoint(p)
-				if onS then
-					local d = (Vector2.new(sp.X, sp.Y) - cntr).Magnitude
-					if d < sDist then sDist, cl = d, v end
+				local dist = (p - myPos).Magnitude
+				if dist < sDist then
+					sDist = dist
+					cl = v
 				end
 			end
 		end
@@ -209,15 +221,13 @@ end
 -- SKILLS REGISTER
 ----------------------------------------------------------------
 -- TAB 1: VISION
-createSkillButton(T1Container, "Skill 1 (Aim NPC - Head)", function()
+createSkillButton(T1Container, "Skill 1 (Aim NPC Range)", function()
 	S.AimNPC = not S.AimNPC S.AimPlr, S.Aim2D = false, false
-	S.Target = S.AimNPC and getClosest(isNPC) or nil
 	return S.AimNPC
 end)
 
-createSkillButton(T1Container, "Skill 2 (Aim Player - Head)", function()
+createSkillButton(T1Container, "Skill 2 (Aim Player Range)", function()
 	S.AimPlr = not S.AimPlr S.AimNPC, S.Aim2D = false, false
-	S.Target = S.AimPlr and getClosest(function(v) return v:IsA("Model") and Players:GetPlayerFromCharacter(v) and v ~= LocalPlayer.Character end) or nil
 	return S.AimPlr
 end)
 
@@ -243,7 +253,6 @@ end)
 
 createSkillButton(T1Container, "Skill 5 (Aim NPC 2D)", function()
 	S.Aim2D = not S.Aim2D S.AimNPC, S.AimPlr = false, false
-	S.Target = S.Aim2D and getClosest(is2DNPC) or nil
 	return S.Aim2D
 end)
 
@@ -275,15 +284,27 @@ createSkillButton(T2Container, "Skill 4 (Ultra Liminal)", function()
 end)
 
 ----------------------------------------------------------------
--- RENDER LOOP
+-- RENDER LOOP (CẬP NHẬT MỤC TIÊU GẦN NHẤT THEO REALTIME)
 ----------------------------------------------------------------
 local frames, lastT = 0, tick()
 RunService.RenderStepped:Connect(function()
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
-	-- Lock Aim vào ĐẦU
-	if (S.AimNPC or S.AimPlr or S.Aim2D) and S.Target then
+	-- Xử lý Cập nhật & Khóa Aim vào mục tiêu có Range gần nhất
+	if S.AimNPC then
+		S.Target = getClosestByRange(isNPC)
+	elseif S.AimPlr then
+		S.Target = getClosestByRange(function(v)
+			return v:IsA("Model") and Players:GetPlayerFromCharacter(v) and v ~= LocalPlayer.Character and v:FindFirstChildOfClass("Humanoid") and v:FindFirstChildOfClass("Humanoid").Health > 0
+		end)
+	elseif S.Aim2D then
+		S.Target = getClosestByRange(is2DNPC)
+	else
+		S.Target = nil
+	end
+
+	if S.Target then
 		local p = getHeadPos(S.Target)
 		if p then Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, p) end
 	end
