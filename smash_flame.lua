@@ -1,4 +1,4 @@
--- Name: smash flame (Smooth Camera Aim Fix)
+-- Name: smash flame (Hard Aim Lock - No Camera Sticking)
 -- Type: LocalScript (StarterPlayerScripts / StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -18,7 +18,6 @@ local settings = {
 }
 
 local MAX_DISTANCE = 1500
-local AIM_SMOOTHNESS = 0.25 -- Độ mượt của Aim (Càng nhỏ càng mượt, tránh khóa cứng Camera)
 
 --------------------------------------------------------------------------------
 -- 1. UI DRAGGABLE & TAB FIX
@@ -238,7 +237,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 3. SỬA LỖI KHÓA CỨNG CAMERA (SMOOTH AIM ENGINE)
+-- 3. HARD AIM LOCK ENGINE (Khóa cứng 100%, không trôi)
 --------------------------------------------------------------------------------
 local function getAimTarget(isSearchingPlayer)
 	local closestHead = nil
@@ -262,14 +261,15 @@ local function getAimTarget(isSearchingPlayer)
 				end
 
 				if isValid then
-					local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-					if onScreen then
-						local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-						local worldDist = (head.Position - Camera.CFrame.Position).Magnitude
-						
-						if worldDist <= MAX_DISTANCE and mouseDist < shortestDistance then
-							shortestDistance = mouseDist
-							closestHead = head
+					local worldDist = (head.Position - Camera.CFrame.Position).Magnitude
+					if worldDist <= MAX_DISTANCE then
+						local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+						if onScreen then
+							local mouseDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+							if mouseDist < shortestDistance then
+								shortestDistance = mouseDist
+								closestHead = head
+							end
 						end
 					end
 				end
@@ -279,7 +279,7 @@ local function getAimTarget(isSearchingPlayer)
 	return closestHead
 end
 
--- Dùng RenderStepped kết hợp CFrame:Lerp để tạo chuyển động xoay tự nhiên
+-- RenderStepped ép góc nhìn dính chặt vào mục tiêu ở từng frame
 RunService.RenderStepped:Connect(function()
 	local targetHead = nil
 	
@@ -290,8 +290,7 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	if targetHead then
-		local targetCFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
-		-- Dùng Lerp để vừa hít tâm vừa cho phép người chơi xoay chuyển động linh hoạt
-		Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, AIM_SMOOTHNESS)
+		-- Khóa cứng Camera về phía đầu mục tiêu
+		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
 	end
 end)
