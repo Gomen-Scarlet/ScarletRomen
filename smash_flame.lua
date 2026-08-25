@@ -1,4 +1,4 @@
--- Name: smash flame (Fixed UI Toggle + Optimized Engine)
+-- Name: smash flame (Fixed POV & Character Sync Engine)
 -- Type: LocalScript (StarterPlayerScripts / StarterCharacterScripts)
 
 local Players = game:GetService("Players")
@@ -20,14 +20,13 @@ local settings = {
 local MAX_DISTANCE = 1500
 
 --------------------------------------------------------------------------------
--- 1. UI DRAGGABLE & SỬA LỖI ĐÓNG MỞ TAB
+-- 1. UI DRAGGABLE & TAB FIX
 --------------------------------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SmashFlameMenu"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Main Window Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 170, 0, 235)
@@ -35,7 +34,6 @@ mainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
 mainFrame.BackgroundTransparency = 1
 mainFrame.Parent = screenGui
 
--- Header Button (Thu gọn / Kéo thả)
 local toggleMenuBtn = Instance.new("TextButton")
 toggleMenuBtn.Name = "ToggleMenu"
 toggleMenuBtn.Size = UDim2.new(1, 0, 0, 40)
@@ -49,14 +47,13 @@ toggleMenuBtn.ZIndex = 2
 toggleMenuBtn.Parent = mainFrame
 Instance.new("UICorner", toggleMenuBtn).CornerRadius = UDim.new(0, 8)
 
--- Container chứa nút bấm (Đặt ClipsDescendants = true để ẩn phần thừa khi đóng)
 local container = Instance.new("Frame")
 container.Name = "Container"
 container.Size = UDim2.new(1, 0, 0, 190)
 container.Position = UDim2.new(0, 0, 0, 45)
 container.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 container.BackgroundTransparency = 0.15
-container.ClipsDescendants = true -- Bắt buộc để ẩn nút khi đóng
+container.ClipsDescendants = true
 container.ZIndex = 1
 container.Parent = mainFrame
 Instance.new("UICorner", container).CornerRadius = UDim.new(0, 8)
@@ -66,7 +63,7 @@ UIListLayout.Parent = container
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 
--- Logic kéo thả Window (Draggable)
+-- Logic kéo thả Window
 local dragging, dragStart, startPos
 toggleMenuBtn.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -111,7 +108,6 @@ local btnSkill2 = createSkillButton("Skill2", "Skill 2: Aim Player [OFF]", 2)
 local btnSkill3 = createSkillButton("Skill3", "Skill 3: ESP NPC [OFF]", 3)
 local btnSkill4 = createSkillButton("Skill4", "Skill 4: ESP Player [OFF]", 4)
 
--- SỬA LỖI ĐÓNG MỜ TAB: Sử dụng Visible + Tween Size
 local isExpanded = true
 toggleMenuBtn.MouseButton1Click:Connect(function()
 	isExpanded = not isExpanded
@@ -119,25 +115,22 @@ toggleMenuBtn.MouseButton1Click:Connect(function()
 	
 	if isExpanded then
 		container.Visible = true
-		local tween = TweenService:Create(container, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		TweenService:Create(container, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Size = UDim2.new(1, 0, 0, 190)
-		})
-		tween:Play()
+		}):Play()
 	else
 		local tween = TweenService:Create(container, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
 			Size = UDim2.new(1, 0, 0, 0)
 		})
 		tween:Play()
 		tween.Completed:Connect(function()
-			if not isExpanded then
-				container.Visible = false -- Tắt hiển thị hoàn toàn khi thu gọn xong
-			end
+			if not isExpanded then container.Visible = false end
 		end)
 	end
 end)
 
 --------------------------------------------------------------------------------
--- 2. TỐI ƯU HÓA HỆ THỐNG ESP & AIM LOGIC
+-- 2. HỆ THỐNG ESP & CACHE
 --------------------------------------------------------------------------------
 local function updateButtonVisual(btn, state, activeText, inactiveText)
 	btn.Text = state and activeText or inactiveText
@@ -169,7 +162,6 @@ btnSkill4.MouseButton1Click:Connect(function()
 	updateButtonVisual(btnSkill4, settings.espPlayer, "Skill 4: ESP Player [ON]", "Skill 4: ESP Player [OFF]")
 end)
 
--- Quản lý Cache danh sách Model
 local cachedTargets = {}
 
 local function scanWorkspace()
@@ -200,7 +192,6 @@ task.spawn(function()
 	end
 end)
 
--- Xử lý ESP
 task.spawn(function()
 	while true do
 		for _, model in ipairs(cachedTargets) do
@@ -247,7 +238,7 @@ task.spawn(function()
 end)
 
 --------------------------------------------------------------------------------
--- 3. ABSOLUTE LOCK
+-- 3. FIX POV & ABSOLUTE LOCK ENGINE
 --------------------------------------------------------------------------------
 local function getAimTarget(isSearchingPlayer)
 	local closestHead = nil
@@ -288,6 +279,7 @@ local function getAimTarget(isSearchingPlayer)
 	return closestHead
 end
 
+-- RenderStepped xử lý đồng bộ Camera + HumanoidRootPart
 RunService.RenderStepped:Connect(function()
 	local targetHead = nil
 	
@@ -298,11 +290,21 @@ RunService.RenderStepped:Connect(function()
 	end
 
 	if targetHead then
-		Camera.CameraType = Enum.CameraType.Scriptable
-		Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
-	else
-		if Camera.CameraType == Enum.CameraType.Scriptable then
-			Camera.CameraType = Enum.CameraType.Custom
+		local character = LocalPlayer.Character
+		if character then
+			local rootPart = character:FindFirstChild("HumanoidRootPart")
+			
+			-- 1. Xoay Camera về mục tiêu (giữ nguyên khoảng cách Camera hiện tại)
+			Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, targetHead.Position)
+			
+			-- 2. SỬA LỖI POV: Xoay luôn Thân Nhân Vật theo trục Y (tránh vỡ dáng/POV tách biệt)
+			if rootPart then
+				local targetPos = Vector2.new(targetHead.Position.X, targetHead.Position.Z)
+				local rootPos = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
+				local angle = math.atan2(targetPos.X - rootPos.X, targetPos.Y - rootPos.Y)
+				
+				rootPart.CFrame = CFrame.new(rootPart.Position) * CFrame.Angles(0, angle, 0)
+			end
 		end
 	end
 end)
