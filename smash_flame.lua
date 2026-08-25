@@ -1,4 +1,4 @@
--- Name: ScarletRomen (Compact & Rainbow Edition)
+-- Name: ScarletRomen (Fixed Skill 2 & Responsive GUI Edition)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -43,6 +43,7 @@ SG.IgnoreGuiInset = true
 SG.ScreenInsets = Enum.ScreenInsets.None
 SG.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
+-- HÀM KÉO THẢ DRAG & DROP TỐI ƯU CHO TOUCH MOBILE
 local function makeDraggable(guiObject)
 	local dragging = false
 	local dragInput, dragStart, startPos
@@ -89,19 +90,21 @@ local V = Instance.new("Frame", Cross) V.Size, V.Position, V.BackgroundColor3, V
 local FPSLbl = Instance.new("TextLabel", SG)
 FPSLbl.Size, FPSLbl.Position, FPSLbl.BackgroundTransparency, FPSLbl.TextColor3, FPSLbl.Font, FPSLbl.Visible = UDim2.new(0, 100, 0, 20), UDim2.new(0, 10, 0, 30), 1, Color3.fromRGB(0,255,150), Enum.Font.SourceSansBold, false
 
--- LOGO DRAGGABLE
+-- LOGO DRAGGABLE (ĐÃ PHÓNG TO 50PX & CÁCH LỀ ĐIỆN THOẠI)
 local Logo = Instance.new("Frame", SG) 
-Logo.Size, Logo.Position, Logo.BackgroundColor3 = UDim2.new(0, 36, 0, 36), UDim2.new(0.05, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) 
+Logo.Size = UDim2.new(0, 50, 0, 50)
+Logo.Position = UDim2.new(0, 20, 0.25, 0)
+Logo.BackgroundColor3 = Color3.fromRGB(15, 15, 15) 
 makeDraggable(Logo)
-Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 10)
 local LSt = Instance.new("UIStroke", Logo) LSt.Color, LSt.Thickness = CFG.THEME, 2
 
 local LogoBtn = Instance.new("TextButton", Logo) 
-LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 18
+LogoBtn.Size, LogoBtn.BackgroundTransparency, LogoBtn.Text, LogoBtn.TextColor3, LogoBtn.Font, LogoBtn.TextSize = UDim2.new(1, 0, 1, 0), 1, "S", CFG.THEME, Enum.Font.SourceSansBold, 24
 
--- MAIN UI (FIX CHIỀU CAO 120PX, CỐ ĐỊNH KHÔNG BỊ GIÃN)
+-- MAIN UI
 local Main = Instance.new("Frame", SG) 
-Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 200, 0, 120), UDim2.new(0.12, 0, 0.2, 0), Color3.fromRGB(15, 15, 15) 
+Main.Size, Main.Position, Main.BackgroundColor3 = UDim2.new(0, 210, 0, 130), UDim2.new(0, 80, 0.25, 0), Color3.fromRGB(15, 15, 15) 
 Main.ClipsDescendants = true
 makeDraggable(Main)
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
@@ -116,14 +119,14 @@ MainScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 MainScroll.CanvasSize = UDim2.new(0,0,0,0)
 
 local MainLayout = Instance.new("UIListLayout", MainScroll)
-MainLayout.Padding = UDim.new(0, 3)
+MainLayout.Padding = UDim.new(0, 4)
 MainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local Footer = Instance.new("TextLabel", Main)
 Footer.Size, Footer.Position, Footer.BackgroundTransparency, Footer.Text, Footer.TextColor3, Footer.Font, Footer.TextSize = UDim2.new(1, 0, 0, 12), UDim2.new(0, 0, 1, -12), 1, "by: Scarlet Romen", Color3.fromRGB(150,150,150), Enum.Font.SourceSansItalic, 9
 
 ----------------------------------------------------------------
--- TAB SYSTEM
+-- TAB SYSTEM (FIX ĐÓNG MỞ TAB)
 ----------------------------------------------------------------
 local function createTabHeader(title, layoutOrder)
 	local btn = Instance.new("TextButton", MainScroll)
@@ -214,6 +217,7 @@ local function getMyPos()
 	return Camera.CFrame.Position
 end
 
+-- FIX LỖI SKILL 2 (RAYCAST CHECK TƯỜNG CHUẨN XÁC)
 local function isVisible(targetHeadPos, targetModel)
 	local origin = Camera.CFrame.Position
 	local direction = targetHeadPos - origin
@@ -222,6 +226,12 @@ local function isVisible(targetHeadPos, targetModel)
 
 	local ignoreList = {}
 	if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+	-- Loại bỏ các phần tử không có va chạm vật lý
+	for _, item in ipairs(Workspace:GetDescendants()) do
+		if item:IsA("BasePart") and not item.CanCollide then
+			table.insert(ignoreList, item)
+		end
+	end
 	params.FilterDescendantsInstances = ignoreList
 
 	local result = Workspace:Raycast(origin, direction, params)
@@ -284,7 +294,6 @@ createSkillButton(T1Container, "Skill 2 (Aim Plr Visible)", function()
 	return S.AimPlr
 end)
 
--- Skill 2.5 với NÚT MÀU CẦU VỒNG (RAINBOW EFFECT)
 local RainbowBtn = createSkillButton(T1Container, "Skill 2.5 (Aim Plr Wall)", function()
 	S.AimPlrWall = not S.AimPlrWall S.AimNPC, S.AimPlr, S.Aim2D = false, false, false
 	return S.AimPlrWall
@@ -352,7 +361,7 @@ RunService.RenderStepped:Connect(function()
 	frames = frames + 1
 	if tick() - lastT >= 1 then FPSLbl.Text = "FPS: " .. frames frames, lastT = 0, tick() end
 
-	-- Hiệu ứng Rainbow cho Skill 2.5 khi bật
+	-- Rainbow cho Skill 2.5
 	if S.AimPlrWall then
 		hue = (hue + 0.005) % 1
 		RainbowBtn.BackgroundColor3 = Color3.fromHSV(hue, 0.8, 1)
