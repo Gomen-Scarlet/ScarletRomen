@@ -16,7 +16,10 @@ local ESP_PLAYER_ENABLED = false
 local ESP_NPC_ENABLED = false
 
 local FLY_SPEED = 50 
-local FOV_RADIUS = 400 
+-- TĂNG BÁN KÍNH QUÉT BẰNG ĐIỂM ẢNH TRÊN MÀN HÌNH (RỘNG GẤP 3 LẦN)
+local FOV_RADIUS = 1200 
+-- TĂNG KHOẢNG CÁCH QUÉT TỐI ĐA TRONG KHÔNG GIAN 3D (ĐƠN VỊ STUDS - TẤT CẢ MỤC TIÊU CỰC XA)
+local MAX_DISTANCE_3D = 3000 
 
 local LOCKED_TARGET_HEAD = nil
 
@@ -33,7 +36,7 @@ ScreenGui.Name = "CustomMenuGui"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Nút Logo Mở/Đóng Menu (Dùng Asset ID của bạn)
+-- Nút Logo Mở/Đóng Menu
 local OpenToggleBtn = Instance.new("ImageButton")
 OpenToggleBtn.Name = "OpenToggleBtn"
 OpenToggleBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -43,7 +46,7 @@ OpenToggleBtn.Image = "rbxassetid://133227737824937"
 OpenToggleBtn.Parent = ScreenGui
 
 local LogoCorner = Instance.new("UICorner")
-LogoCorner.CornerRadius = UDim.new(0.5, 0) -- Bo tròn thành hình tròn
+LogoCorner.CornerRadius = UDim.new(0.5, 0)
 LogoCorner.Parent = OpenToggleBtn
 
 local LogoStroke = Instance.new("UIStroke")
@@ -51,7 +54,7 @@ LogoStroke.Color = Color3.fromRGB(255, 0, 0)
 LogoStroke.Thickness = 2
 LogoStroke.Parent = OpenToggleBtn
 
--- Frame chính Tab Menu (Không tiêu đề)
+-- Frame chính Tab Menu
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 200, 0, 210)
@@ -151,22 +154,27 @@ local function isAlly(player)
 	return false
 end
 
--- Tìm Player gần nhất (Không Aim đồng đội)
+-- Tìm Player gần tâm nhất (Mở rộng phạm vi cực đại)
 local function findTargetPlayer()
 	local closestHead = nil
 	local shortestDistance = FOV_RADIUS
 	local centerPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and not isAlly(player) and player.Character then
 			local head = player.Character:FindFirstChild("Head")
 			local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+			
 			if head and humanoid and humanoid.Health > 0 then
-				local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-				if onScreen then
-					local dist = (Vector2.new(screenPos.X, screenPos.Y) - centerPos).Magnitude
-					if dist < shortestDistance then
-						shortestDistance = dist
+				-- Kiểm tra khoảng cách 3D thực tế trước
+				local dist3D = myRoot and (head.Position - myRoot.Position).Magnitude or 0
+				if dist3D <= MAX_DISTANCE_3D then
+					local screenPos = Camera:WorldToViewportPoint(head.Position)
+					local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - centerPos).Magnitude
+					
+					if dist2D < shortestDistance then
+						shortestDistance = dist2D
 						closestHead = head
 					end
 				end
@@ -176,22 +184,26 @@ local function findTargetPlayer()
 	return closestHead
 end
 
--- Tìm NPC gần nhất
+-- Tìm NPC gần tâm nhất (Mở rộng phạm vi cực đại)
 local function findTargetNPC()
 	local closestHead = nil
 	local shortestDistance = FOV_RADIUS
 	local centerPos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
 	for _, model in ipairs(Workspace:GetDescendants()) do
 		if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
 			local head = model:FindFirstChild("Head")
 			local humanoid = model:FindFirstChildOfClass("Humanoid")
+			
 			if head and humanoid and humanoid.Health > 0 then
-				local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-				if onScreen then
-					local dist = (Vector2.new(screenPos.X, screenPos.Y) - centerPos).Magnitude
-					if dist < shortestDistance then
-						shortestDistance = dist
+				local dist3D = myRoot and (head.Position - myRoot.Position).Magnitude or 0
+				if dist3D <= MAX_DISTANCE_3D then
+					local screenPos = Camera:WorldToViewportPoint(head.Position)
+					local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - centerPos).Magnitude
+					
+					if dist2D < shortestDistance then
+						shortestDistance = dist2D
 						closestHead = head
 					end
 				end
@@ -233,7 +245,7 @@ local function applyHighlight(model, color)
 		hl = Instance.new("Highlight")
 		hl.Name = "CustomESP"
 		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		hl.FillTransparency = 0.5
+		hl.FillTransparency = 0.4
 		hl.OutlineTransparency = 0
 		hl.Parent = model
 	end
@@ -283,7 +295,7 @@ RunService.RenderStepped:Connect(function()
 		removeFlight()
 	end
 
-	-- 3. ESP PLAYER (ĐỎ CHỦ THỂ / XANH DƯƠNG ĐỒNG ĐỘI)
+	-- 3. ESP PLAYER (CỰC CỰC TẦM XA)
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer and player.Character then
 			if ESP_PLAYER_ENABLED then
@@ -295,7 +307,7 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 
-	-- 4. ESP NPC (MÀU VÀNG)
+	-- 4. ESP NPC (QUÉT TOÀN MAP)
 	if ESP_NPC_ENABLED then
 		for _, model in ipairs(Workspace:GetDescendants()) do
 			if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
