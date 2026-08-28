@@ -1,10 +1,12 @@
--- Name: ScarletRomen (Team Check ESP Edition)
+-- Name: ScarletRomen (Clean UI Edition v3 - Aim Player, ESP Player & Hitbox Update)
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -13,18 +15,13 @@ local SAVE_FILE = "ScarletRomen_Config.json"
 
 local CFG = {
 	THEME = Color3.fromRGB(255, 30, 30),
-	NPC = Color3.fromRGB(255, 215, 0),
-	NPC2D = Color3.fromRGB(0, 150, 255),
-	ENEMY = Color3.fromRGB(255, 40, 40),
-	ALLY = Color3.fromRGB(0, 255, 100),
-	MY_BODY = Color3.fromRGB(170, 0, 255),
 	NAME = Color3.fromRGB(0, 170, 255),
 	STROKE = Color3.fromRGB(0, 40, 120),
 
-	-- Màu khi hiệu ứng Line Color tắt
 	BASIC_LINE = Color3.fromRGB(0, 0, 0),
+	TAB_BG = Color3.fromRGB(25, 25, 25),
+	MAIN_BG = Color3.fromRGB(15, 15, 15),
 
-	-- Thời gian hoàn thành một vòng đỏ -> đen -> đỏ
 	COLOR_SPEED = 0.7
 }
 
@@ -37,6 +34,7 @@ local S = {
 	EspNPC2D = false,
 	EspPlr = false,
 	EspName = false,
+	Hitbox = false,
 
 	Fps = false,
 	Bright = false,
@@ -45,24 +43,262 @@ local S = {
 	BlackScreen = false,
 	WhiteScreen = false,
 
-	-- Line effect
-	LineColorEnabled = true,
-
-	LockedTargetNPC = nil,
-	LockedTargetPlr = nil,
+	-- Line Mode: "off" | "mode1" | "mode2" | "mode3"
+	LineMode = "off",
 
 	GuiWidth = 210,
 	GuiHeight = 160,
-
-	-- Scale tổng thể GUI
 	GuiScale = 1,
 
 	LogoSize = 50,
 	LogoImageId = "",
 
-	-- Background GUI
-	GuiBackgroundImageId = ""
+	GuiBackgroundImageId = "",
+	GuiLocked = false,
+	Crosshair = false,
+	GuiTransparency = 0.15,
+
+	ScreenDimEnabled = false,
+	ScreenDimOpacity = 0.5,
+
+	MusicId = "",
+	MusicPlaying = false,
+	MusicVolume = 0.5,
+	MusicSpeed = 1,
+
+	EspInteract = false
 }
+
+----------------------------------------------------------------
+-- AIM NPC & ESP NPC (Skill 1 & Skill 3)
+----------------------------------------------------------------
+
+local NPC_MAX_DISTANCE = 800
+local NPC_REFRESH_INTERVAL = 0.5
+local NPC_ESP_COLOR = Color3.fromRGB(255, 230, 0)
+
+local cachedNPCs = {}
+local lastNPCRefresh = 0
+local lockedNPC = nil
+local espHighlights = {}
+
+local function isValidNPC(model)
+	if not model or not model:IsA("Model") then return false end
+	if Players:GetPlayerFromCharacter(model) then return false end
+
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local head = model:FindFirstChild("Head") or model.PrimaryPart
+	if humanoid and head and humanoid.Health > 0 then
+		return true
+	end
+	return false
+end
+
+local function refreshNPCCache()
+	table.clear(cachedNPCs)
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if isValidNPC(obj) then
+			table.insert(cachedNPCs, obj)
+		end
+	end
+end
+
+local function getClosestNPC()
+	local closest = nil
+	local shortestDist = math.huge
+	local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, model in ipairs(cachedNPCs) do
+		if isValidNPC(model) then
+			local head = model:FindFirstChild("Head") or model.PrimaryPart
+			local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+			if onScreen then
+				local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+				local dist3D = (head.Position - Camera.CFrame.Position).Magnitude
+				if dist3D <= NPC_MAX_DISTANCE and dist2D < shortestDist then
+					shortestDist = dist2D
+					closest = model
+				end
+			end
+		end
+	end
+	return closest
+end
+
+local function applyNPCESP(model)
+	if espHighlights[model] and espHighlights[model].Parent then return end
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "ScarletESP_NPC"
+	highlight.Adornee = model
+	highlight.FillColor = NPC_ESP_COLOR
+	highlight.FillTransparency = 0.5
+	highlight.OutlineColor = NPC_ESP_COLOR
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = model
+	espHighlights[model] = highlight
+end
+
+local function clearAllNPCESP()
+	for _, highlight in pairs(espHighlights) do
+		if highlight then highlight:Destroy() end
+	end
+	table.clear(espHighlights)
+end
+
+----------------------------------------------------------------
+-- PLAYER UTILS (Team Check, Aim Player, ESP Player, Hitbox)
+----------------------------------------------------------------
+
+local playerESPHighlights = {}
+local lockedPlayer = nil
+
+local function isTeammate(player)
+	if player == LocalPlayer then return true end
+	if LocalPlayer.Team and player.Team then
+		return LocalPlayer.Team == player.Team
+	end
+	return false
+end
+
+local function getPlayerColor(player)
+	if isTeammate(player) then
+		return Color3.fromRGB(0, 255, 0) -- Xanh lá cho đồng đội
+	else
+		return Color3.fromRGB(255, 0, 0) -- Đỏ cho kẻ địch
+	end
+end
+
+local function isValidPlayer(player)
+	if not player or player == LocalPlayer then return false end
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local head = char:FindFirstChild("Head")
+		if hum and head and hum.Health > 0 then
+			return true
+		end
+	end
+	return false
+end
+
+local function getClosestPlayerToCenter()
+	local closest = nil
+	local shortestDist = math.huge
+	local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if isValidPlayer(plr) then
+			local head = plr.Character:FindFirstChild("Head")
+			local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+			if onScreen then
+				local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+				if dist2D < shortestDist then
+					shortestDist = dist2D
+					closest = plr
+				end
+			end
+		end
+	end
+	return closest
+end
+
+local function applyPlayerESP(player)
+	local char = player.Character
+	if not char then return end
+
+	local color = getPlayerColor(player)
+	local highlight = char:FindFirstChild("ScarletESP_Player")
+	if not highlight then
+		highlight = Instance.new("Highlight")
+		highlight.Name = "ScarletESP_Player"
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Parent = char
+	end
+	highlight.Adornee = char
+	highlight.FillColor = color
+	highlight.FillTransparency = 0.5
+	highlight.OutlineColor = color
+	highlight.OutlineTransparency = 0
+	playerESPHighlights[player] = highlight
+end
+
+local function clearAllPlayerESP()
+	for plr, hl in pairs(playerESPHighlights) do
+		if hl and hl.Parent then
+			hl:Destroy()
+		end
+	end
+	table.clear(playerESPHighlights)
+end
+
+----------------------------------------------------------------
+-- ESP INTERACT (Skill 8)
+----------------------------------------------------------------
+
+local PROMPT_REFRESH_INTERVAL = 0.5
+local PROMPT_ESP_COLOR = Color3.fromRGB(255, 140, 0)
+
+local cachedPrompts = {}
+local lastPromptRefresh = 0
+local promptESP = {}
+
+local function isValidPrompt(prompt)
+	return prompt ~= nil and prompt.Parent ~= nil and prompt:IsA("ProximityPrompt") and prompt.Enabled
+end
+
+local function refreshPromptCache()
+	table.clear(cachedPrompts)
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("ProximityPrompt") then
+			table.insert(cachedPrompts, obj)
+		end
+	end
+end
+
+local function applyPromptESP(prompt)
+	if promptESP[prompt] and promptESP[prompt].highlight.Parent then return end
+
+	local target = prompt.Parent
+	if not target then return end
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "ScarletESP_Interact"
+	highlight.Adornee = target
+	highlight.FillColor = PROMPT_ESP_COLOR
+	highlight.FillTransparency = 0.55
+	highlight.OutlineColor = PROMPT_ESP_COLOR
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	highlight.Parent = target
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "ScarletESP_InteractLabel"
+	billboard.Size = UDim2.new(0, 150, 0, 26)
+	billboard.StudsOffset = Vector3.new(0, 2.2, 0)
+	billboard.AlwaysOnTop = true
+	billboard.Adornee = target
+	billboard.Parent = target
+
+	local label = Instance.new("TextLabel", billboard)
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = PROMPT_ESP_COLOR
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 14
+	label.TextStrokeTransparency = 0.4
+	label.Text = (prompt.ActionText ~= "" and prompt.ActionText) or "Interact"
+
+	promptESP[prompt] = { highlight = highlight, billboard = billboard }
+end
+
+local function clearAllPromptESP()
+	for _, data in pairs(promptESP) do
+		if data.highlight then data.highlight:Destroy() end
+		if data.billboard then data.billboard:Destroy() end
+	end
+	table.clear(promptESP)
+end
 
 ----------------------------------------------------------------
 -- GUI BASE
@@ -85,6 +321,10 @@ local function makeDraggable(guiObject)
 		if input.UserInputType == Enum.UserInputType.MouseButton1
 			or input.UserInputType == Enum.UserInputType.Touch then
 
+			if guiObject:GetAttribute("SR_Locked") then
+				return
+			end
+
 			dragging = true
 			dragStart = input.Position
 			startPos = guiObject.Position
@@ -105,7 +345,7 @@ local function makeDraggable(guiObject)
 		end
 	end)
 
-	UserInputService.InputChanged:Connect(function(input)
+	local uisConn = UserInputService.InputChanged:Connect(function(input)
 		if input == dragInput and dragging then
 			local delta = input.Position - dragStart
 
@@ -115,6 +355,12 @@ local function makeDraggable(guiObject)
 				startPos.Y.Scale,
 				startPos.Y.Offset + delta.Y
 			)
+		end
+	end)
+
+	guiObject.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			uisConn:Disconnect()
 		end
 	end)
 end
@@ -134,7 +380,7 @@ FPSLbl.Visible = false
 FPSLbl.Text = "FPS: 0"
 
 ----------------------------------------------------------------
--- FULLSCREEN OVERLAY
+-- FULLSCREEN OVERLAYS
 ----------------------------------------------------------------
 
 local OverlayScreen = Instance.new("Frame", SG)
@@ -145,6 +391,33 @@ OverlayScreen.BorderSizePixel = 0
 OverlayScreen.Visible = false
 OverlayScreen.ZIndex = 999
 
+local DimOverlay = Instance.new("Frame", SG)
+DimOverlay.Name = "DimOverlay"
+DimOverlay.Size = UDim2.new(1, 0, 1, 0)
+DimOverlay.Position = UDim2.new(0, 0, 0, 0)
+DimOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+DimOverlay.BorderSizePixel = 0
+DimOverlay.BackgroundTransparency = 1 - S.ScreenDimOpacity
+DimOverlay.Visible = false
+DimOverlay.ZIndex = 998
+
+----------------------------------------------------------------
+-- CROSSHAIR
+----------------------------------------------------------------
+
+local Crosshair = Instance.new("TextLabel", SG)
+Crosshair.Name = "Crosshair"
+Crosshair.Size = UDim2.new(0, 30, 0, 30)
+Crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+Crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
+Crosshair.BackgroundTransparency = 1
+Crosshair.Text = "+"
+Crosshair.TextColor3 = Color3.fromRGB(160, 160, 160)
+Crosshair.Font = Enum.Font.SourceSansBold
+Crosshair.TextSize = 24
+Crosshair.Visible = false
+Crosshair.ZIndex = 1000
+
 ----------------------------------------------------------------
 -- LOGO
 ----------------------------------------------------------------
@@ -152,7 +425,7 @@ OverlayScreen.ZIndex = 999
 local Logo = Instance.new("Frame", SG)
 Logo.Name = "Logo"
 Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
-Logo.Position = UDim2.new(0.15, 0, 0.4, 0)
+Logo.Position = UDim2.new(0, 10, 0, 10)
 Logo.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 Logo.ZIndex = 20
 
@@ -188,8 +461,8 @@ LogoBtn.ZIndex = 22
 local Main = Instance.new("Frame", SG)
 Main.Name = "Main"
 Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
-Main.Position = UDim2.new(0.2, 0, 0.35, 0)
-Main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Main.Position = UDim2.new(0, 10, 0.35, 0)
+Main.BackgroundColor3 = CFG.MAIN_BG
 Main.BackgroundTransparency = 0
 Main.ClipsDescendants = true
 Main.ZIndex = 10
@@ -202,17 +475,9 @@ local MSt = Instance.new("UIStroke", Main)
 MSt.Color = CFG.BASIC_LINE
 MSt.Thickness = 2
 
-----------------------------------------------------------------
--- GUI SCALE
-----------------------------------------------------------------
-
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = S.GuiScale
 MainScale.Parent = Main
-
-----------------------------------------------------------------
--- GUI BACKGROUND IMAGE
-----------------------------------------------------------------
 
 local GuiBackground = Instance.new("ImageLabel", Main)
 GuiBackground.Name = "GuiBackground"
@@ -227,17 +492,9 @@ GuiBackground.ZIndex = 10
 local GuiBackgroundCorner = Instance.new("UICorner", GuiBackground)
 GuiBackgroundCorner.CornerRadius = UDim.new(0, 8)
 
-----------------------------------------------------------------
--- LOGO OPEN/CLOSE
-----------------------------------------------------------------
-
 LogoBtn.MouseButton1Click:Connect(function()
 	Main.Visible = not Main.Visible
 end)
-
-----------------------------------------------------------------
--- MAIN SCROLL
-----------------------------------------------------------------
 
 local MainScroll = Instance.new("ScrollingFrame", Main)
 MainScroll.Name = "MainScroll"
@@ -254,10 +511,6 @@ local MainLayout = Instance.new("UIListLayout", MainScroll)
 MainLayout.Padding = UDim.new(0, 4)
 MainLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 MainLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-----------------------------------------------------------------
--- FOOTER
-----------------------------------------------------------------
 
 local Footer = Instance.new("TextLabel", Main)
 Footer.Size = UDim2.new(1, 0, 0, 12)
@@ -287,8 +540,8 @@ local function createTabHeader(title, layoutOrder)
 
 	local btn = Instance.new("TextButton", tabGroup)
 	btn.Size = UDim2.new(1, 0, 0, 24)
-	btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	btn.Text = "  " .. title .. " [ + ]"
+	btn.BackgroundColor3 = CFG.TAB_BG
+	btn.Text = "  " .. title
 	btn.TextColor3 = Color3.fromRGB(220, 220, 220)
 	btn.Font = Enum.Font.SourceSansBold
 	btn.TextSize = 11
@@ -339,16 +592,13 @@ local function createTabHeader(title, layoutOrder)
 
 			container.Visible = true
 			activeContainer = container
-
-			btn.Text = "  " .. title .. " [ - ]"
+			btn.Text = "  " .. title
 		else
 			container.Visible = false
-
 			if activeContainer == container then
 				activeContainer = nil
 			end
-
-			btn.Text = "  " .. title .. " [ + ]"
+			btn.Text = "  " .. title
 		end
 	end
 
@@ -360,7 +610,7 @@ local function createTabHeader(title, layoutOrder)
 		toggleTab(false)
 	end)
 
-	return container
+	return container, tabGroup
 end
 
 local T1Container = createTabHeader("Vision", 1)
@@ -368,181 +618,15 @@ local T2Container = createTabHeader("Liminal", 2)
 local T3Container = createTabHeader("YinYang", 3)
 
 ----------------------------------------------------------------
--- LOGICS & TARGET FINDERS
-----------------------------------------------------------------
-
-local function isEnemy(player)
-	if not player or player == LocalPlayer then
-		return false
-	end
-
-	if LocalPlayer.Team and player.Team then
-		return LocalPlayer.Team ~= player.Team
-	end
-
-	return true
-end
-
-local function isStrictNPC(m)
-	if not m or not m:IsA("Model") then
-		return false
-	end
-
-	if Players:GetPlayerFromCharacter(m) then
-		return false
-	end
-
-	local hum = m:FindFirstChildOfClass("Humanoid")
-
-	if not hum or hum.Health <= 0 then
-		return false
-	end
-
-	local head = m:FindFirstChild("Head") or m.PrimaryPart
-
-	return head and head:IsA("BasePart")
-end
-
-local function isStrictPlayer(m)
-	if not m or not m:IsA("Model") then
-		return false
-	end
-
-	if m == LocalPlayer.Character then
-		return false
-	end
-
-	if not Players:GetPlayerFromCharacter(m) then
-		return false
-	end
-
-	local hum = m:FindFirstChildOfClass("Humanoid")
-
-	if not hum or hum.Health <= 0 then
-		return false
-	end
-
-	local head = m:FindFirstChild("Head") or m.PrimaryPart
-
-	return head and head:IsA("BasePart")
-end
-
-local function is2DNPC(o)
-	if not o then
-		return false
-	end
-
-	if Players:GetPlayerFromCharacter(o) then
-		return false
-	end
-
-	local n = string.lower(o.Name)
-
-	for _, w in ipairs({
-		"wall",
-		"tuong",
-		"part",
-		"baseplate",
-		"building",
-		"floor",
-		"block",
-		"mesh",
-		"roof"
-	}) do
-		if string.find(n, w) then
-			return false
-		end
-	end
-
-	return o:IsA("Decal")
-		or o:IsA("Texture")
-		or o:IsA("BillboardGui")
-end
-
-local function getHeadPos(o)
-	if not o then
-		return nil
-	end
-
-	if o:IsA("Model") then
-		local head = o:FindFirstChild("Head") or o.PrimaryPart
-
-		if head and head:IsA("BasePart") then
-			return head.Position
-		end
-
-		return o:GetPivot().Position
-
-	elseif o:IsA("BasePart") then
-		return o.Position
-
-	elseif o.Parent and o.Parent:IsA("BasePart") then
-		return o.Parent.Position
-	end
-
-	return nil
-end
-
-local function toggleHL(m, color, name, on, trans)
-	if not m then
-		return
-	end
-
-	local h = m:FindFirstChild(name)
-
-	if on then
-		if not h then
-			h = Instance.new("Highlight")
-			h.Name = name
-			h.Parent = m
-			h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		end
-
-		h.FillColor = color
-		h.FillTransparency = trans or 0.5
-	else
-		if h then
-			h:Destroy()
-		end
-	end
-end
-
-local function getClosestToCrosshair(chkFunc)
-	local cl
-	local sDist = math.huge
-
-	local centerScreen = Vector2.new(
-		Camera.ViewportSize.X / 2,
-		Camera.ViewportSize.Y / 2
-	)
-
-	for _, v in ipairs(Workspace:GetDescendants()) do
-		if chkFunc(v) then
-			local p = getHeadPos(v)
-
-			if p then
-				local screenPos, onScreen =
-					Camera:WorldToViewportPoint(p)
-
-				if onScreen then
-					local distToCenter =
-						(Vector2.new(screenPos.X, screenPos.Y) - centerScreen).Magnitude
-
-					if distToCenter < sDist then
-						sDist = distToCenter
-						cl = v
-					end
-				end
-			end
-		end
-	end
-
-	return cl
-end
-
-----------------------------------------------------------------
 -- BUTTON HELPERS
 ----------------------------------------------------------------
+
+local function setToggleButtonVisual(btn, baseText, state)
+	btn.Text = baseText .. (state and ": ON" or ": OFF")
+	btn.TextColor3 = state
+		and Color3.fromRGB(220, 220, 220)
+		or Color3.fromRGB(160, 160, 160)
+end
 
 local function createSkillButton(parent, text, cb, order)
 	local b = Instance.new("TextButton", parent)
@@ -560,14 +644,11 @@ local function createSkillButton(parent, text, cb, order)
 
 	b.MouseButton1Click:Connect(function()
 		local st = cb()
-
 		b.Text = text .. (st and ": ON" or ": OFF")
-
-		-- Không dùng đỏ cố định nữa.
 		if st then
-			b.TextColor3 = Color3.fromRGB(255, 255, 255)
+			b.TextColor3 = Color3.fromRGB(220, 220, 220)
 		else
-			b.TextColor3 = Color3.fromRGB(200, 200, 200)
+			b.TextColor3 = Color3.fromRGB(160, 160, 160)
 		end
 	end)
 
@@ -604,164 +685,214 @@ local function createTextInput(parent, placeholder, defaultText, cb, order)
 end
 
 ----------------------------------------------------------------
+-- TAB 4 & 5 & 6
+----------------------------------------------------------------
+
+local T4Container = createTabHeader("Interface", 4)
+local T5Container = createTabHeader("Interface Settings", 5)
+local T6Container = createTabHeader("Music", 6)
+
+----------------------------------------------------------------
 -- TAB 1: VISION
 ----------------------------------------------------------------
 
--- Công tắc Line Color nằm trên cùng Tab 1
-local LineColorBtn = createSkillButton(
-	T1Container,
-	"Line Color Effect",
-	function()
-		S.LineColorEnabled = not S.LineColorEnabled
-		return S.LineColorEnabled
-	end,
-	1
-)
+local Skill1Btn, Skill2Btn, Aim2DBtn
 
-LineColorBtn.Text = "Line Color Effect: ON"
+local function tab1Exclusive(activeKey)
+	if activeKey ~= "AimNPC" and S.AimNPC then
+		S.AimNPC = false
+		setToggleButtonVisual(Skill1Btn, "Skill 1 (Aim NPC Strict & Lock)", false)
+		Skill1Btn.TextColor3 = Color3.fromRGB(160, 160, 160)
+		lockedNPC = nil
+	end
 
-createSkillButton(
+	if activeKey ~= "AimPlr" and S.AimPlr then
+		S.AimPlr = false
+		setToggleButtonVisual(Skill2Btn, "Skill 2 (Aim Player & Lock)", false)
+		Skill2Btn.TextColor3 = Color3.fromRGB(255, 40, 40)
+		lockedPlayer = nil
+	end
+
+	if activeKey ~= "Aim2D" and S.Aim2D then
+		S.Aim2D = false
+		setToggleButtonVisual(Aim2DBtn, "Skill 5 (Aim NPC 2D)", false)
+	end
+end
+
+Skill1Btn = createSkillButton(
 	T1Container,
 	"Skill 1 (Aim NPC Strict & Lock)",
 	function()
 		S.AimNPC = not S.AimNPC
-		S.AimPlr = false
-		S.Aim2D = false
-
-		if not S.AimNPC then
-			S.LockedTargetNPC = nil
+		if S.AimNPC then
+			tab1Exclusive("AimNPC")
+			lockedNPC = getClosestNPC()
+		else
+			lockedNPC = nil
 		end
-
 		return S.AimNPC
 	end,
 	2
 )
+Skill1Btn.TextColor3 = Color3.fromRGB(160, 160, 160)
 
-local RainbowBtn = createSkillButton(
+Skill2Btn = createSkillButton(
 	T1Container,
 	"Skill 2 (Aim Player & Lock)",
 	function()
 		S.AimPlr = not S.AimPlr
-		S.AimNPC = false
-		S.Aim2D = false
-
-		if not S.AimPlr then
-			S.LockedTargetPlr = nil
+		if S.AimPlr then
+			tab1Exclusive("AimPlr")
+			lockedPlayer = getClosestPlayerToCenter()
+		else
+			lockedPlayer = nil
 		end
-
 		return S.AimPlr
 	end,
 	3
 )
+Skill2Btn.TextColor3 = Color3.fromRGB(255, 40, 40)
 
-createSkillButton(
+local EspNPCBtn = createSkillButton(
 	T1Container,
 	"Skill 3 (ESP NPC)",
 	function()
 		S.EspNPC = not S.EspNPC
-
-		for _, v in ipairs(Workspace:GetDescendants()) do
-			if isStrictNPC(v) then
-				toggleHL(
-					v,
-					CFG.NPC,
-					"SR_NPC",
-					S.EspNPC
-				)
-			end
+		if not S.EspNPC then
+			clearAllNPCESP()
 		end
-
 		return S.EspNPC
 	end,
 	4
 )
 
-createSkillButton(
+local Skill4Btn = createSkillButton(
 	T1Container,
 	"Skill 4 (ESP Player)",
 	function()
 		S.EspPlr = not S.EspPlr
-
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character then
-				if p == LocalPlayer then
-					toggleHL(
-						p.Character,
-						CFG.MY_BODY,
-						"SR_PLR",
-						S.EspPlr,
-						0.7
-					)
-				else
-					local espColor =
-						isEnemy(p) and CFG.ENEMY or CFG.ALLY
-
-					toggleHL(
-						p.Character,
-						espColor,
-						"SR_PLR",
-						S.EspPlr,
-						0.5
-					)
-				end
-			end
+		if not S.EspPlr then
+			clearAllPlayerESP()
 		end
-
 		return S.EspPlr
 	end,
 	5
 )
+Skill4Btn.TextColor3 = Color3.fromRGB(255, 40, 40)
 
-createSkillButton(
+Aim2DBtn = createSkillButton(
 	T1Container,
 	"Skill 5 (Aim NPC 2D)",
 	function()
 		S.Aim2D = not S.Aim2D
-		S.AimNPC = false
-		S.AimPlr = false
-
+		if S.Aim2D then tab1Exclusive("Aim2D") end
 		return S.Aim2D
 	end,
 	6
 )
 
-createSkillButton(
+local EspNPC2DBtn = createSkillButton(
 	T1Container,
 	"Skill 6 (ESP NPC 2D)",
 	function()
 		S.EspNPC2D = not S.EspNPC2D
-
-		for _, v in ipairs(Workspace:GetDescendants()) do
-			if is2DNPC(v) then
-				local targetObj
-
-				if v:IsA("Model") or v:IsA("BasePart") then
-					targetObj = v
-				else
-					targetObj = v.Parent
-				end
-
-				if targetObj then
-					toggleHL(
-						targetObj,
-						CFG.NPC2D,
-						"SR_NPC2D",
-						S.EspNPC2D
-					)
-				end
-			end
-		end
-
 		return S.EspNPC2D
 	end,
 	7
 )
 
+local EspInteractBtn = createSkillButton(
+	T1Container,
+	"Skill 8 (ESP Interact)",
+	function()
+		S.EspInteract = not S.EspInteract
+		if not S.EspInteract then
+			clearAllPromptESP()
+		end
+		return S.EspInteract
+	end,
+	8
+)
+EspInteractBtn.TextColor3 = PROMPT_ESP_COLOR
+
+-- Skill 9: Hitbox Player
+local Skill9Btn = createSkillButton(
+	T1Container,
+	"Skill 9 (Hitbox Player)",
+	function()
+		S.Hitbox = not S.Hitbox
+		if not S.Hitbox then
+			-- Restore normal hitboxes when OFF
+			for _, plr in ipairs(Players:GetPlayers()) do
+				local char = plr.Character
+				if char then
+					local root = char:FindFirstChild("HumanoidRootPart")
+					if root then
+						root.Size = Vector3.new(2, 2, 1)
+						root.Transparency = 1
+					end
+				end
+			end
+		end
+		return S.Hitbox
+	end,
+	10
+)
+Skill9Btn.TextColor3 = Color3.fromRGB(170, 0, 255)
+
+----------------------------------------------------------------
+-- TAB 1 - SKILL 7: LINE MODE
+----------------------------------------------------------------
+
+local LineModeBtn = Instance.new("TextButton", T1Container)
+LineModeBtn.Size = UDim2.new(1, 0, 0, 24)
+LineModeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+LineModeBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+LineModeBtn.Font = Enum.Font.SourceSansBold
+LineModeBtn.TextSize = 10
+LineModeBtn.LayoutOrder = 9
+LineModeBtn.ZIndex = 24
+Instance.new("UICorner", LineModeBtn).CornerRadius = UDim.new(0, 4)
+
+local function lineModeLabel()
+	if S.LineMode == "off" then
+		return "Skill 7 (Line Mode): OFF"
+	elseif S.LineMode == "mode1" then
+		return "Skill 7 (Line Mode): Che do 1"
+	elseif S.LineMode == "mode2" then
+		return "Skill 7 (Line Mode): Che do 2"
+	else
+		return "Skill 7 (Line Mode): Che do 3"
+	end
+end
+
+LineModeBtn.Text = lineModeLabel()
+
+LineModeBtn.MouseButton1Click:Connect(function()
+	if S.LineMode == "off" then
+		S.LineMode = "mode1"
+	elseif S.LineMode == "mode1" then
+		S.LineMode = "mode2"
+	elseif S.LineMode == "mode2" then
+		S.LineMode = "mode3"
+	else
+		S.LineMode = "off"
+	end
+
+	LineModeBtn.Text = lineModeLabel()
+
+	if S.LineMode == "mode2" then
+		Main.BackgroundColor3 = CFG.TAB_BG
+	else
+		Main.BackgroundColor3 = CFG.MAIN_BG
+	end
+end)
+
 ----------------------------------------------------------------
 -- TAB 2: LIMINAL
 ----------------------------------------------------------------
 
-createSkillButton(
+local NamePlayerBtn = createSkillButton(
 	T2Container,
 	"Skill 1 (ESP Name Player)",
 	function()
@@ -770,74 +901,91 @@ createSkillButton(
 	end,
 	1
 )
+NamePlayerBtn.TextColor3 = Color3.fromRGB(255, 40, 40)
 
-createSkillButton(
+local function applyFps(state)
+	if state then
+		settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+		Lighting.GlobalShadows = false
+
+		for _, v in ipairs(Workspace:GetDescendants()) do
+			if v:IsA("Texture") or v:IsA("Decal") then
+				pcall(function()
+					v:Destroy()
+				end)
+			end
+		end
+	else
+		settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+		Lighting.GlobalShadows = true
+	end
+end
+
+local FpsBtn = createSkillButton(
 	T2Container,
 	"Skill 2 (FPS Booster)",
 	function()
 		S.Fps = not S.Fps
-
-		if S.Fps then
-			settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-			Lighting.GlobalShadows = false
-		else
-			settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
-			Lighting.GlobalShadows = true
-		end
-
+		applyFps(S.Fps)
 		return S.Fps
 	end,
 	2
 )
 
-createSkillButton(
+local function applyBright(state)
+	if state then
+		Lighting.FogEnd = 9e9
+		Lighting.Brightness = 2
+	else
+		Lighting.FogEnd = 1000
+		Lighting.Brightness = 1
+	end
+end
+
+local BrightBtn = createSkillButton(
 	T2Container,
 	"Skill 3 (Full Bright)",
 	function()
 		S.Bright = not S.Bright
-
-		if S.Bright then
-			Lighting.FogEnd = 9e9
-			Lighting.Brightness = 2
-		else
-			Lighting.FogEnd = 1000
-			Lighting.Brightness = 1
-		end
-
+		applyBright(S.Bright)
 		return S.Bright
 	end,
 	3
 )
 
-createSkillButton(
+local function applyUltra(state)
+	FPSLbl.Visible = state
+
+	if state then
+		Camera.MaxAxisFieldOfView = 40
+
+		for _, v in ipairs(Workspace:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.Material = Enum.Material.SmoothPlastic
+				v.Color = Color3.fromRGB(120, 120, 120)
+
+			elseif v:IsA("Decal")
+				or v:IsA("Texture")
+				or v:IsA("Accessory")
+				or v:IsA("Shirt")
+				or v:IsA("Pants") then
+
+				pcall(function()
+					v:Destroy()
+				end)
+			end
+		end
+	else
+		Camera.MaxAxisFieldOfView = 120
+	end
+end
+
+local UltraBtn = createSkillButton(
 	T2Container,
 	"Skill 4 (Ultra Liminal)",
 	function()
 		S.Ultra = not S.Ultra
-		FPSLbl.Visible = S.Ultra
-
-		if S.Ultra then
-			Camera.MaxAxisFieldOfView = 40
-
-			for _, v in ipairs(Workspace:GetDescendants()) do
-				if v:IsA("BasePart") then
-					v.Material = Enum.Material.SmoothPlastic
-					v.Color = Color3.fromRGB(120, 120, 120)
-
-				elseif v:IsA("Decal")
-					or v:IsA("Texture")
-					or v:IsA("Accessory")
-					or v:IsA("Shirt")
-					or v:IsA("Pants")
-					or v:IsA("Animator") then
-
-					pcall(function()
-						v:Destroy()
-					end)
-				end
-			end
-		end
-
+		applyUltra(S.Ultra)
 		return S.Ultra
 	end,
 	4
@@ -847,8 +995,9 @@ createSkillButton(
 -- TAB 3: YINYANG
 ----------------------------------------------------------------
 
--- Skill 1 mới: Scale tổng thể GUI
-local guiScaleInput = createTextInput(
+local guiScaleInput
+
+guiScaleInput = createTextInput(
 	T3Container,
 	"Skill 1: GUI Scale (0.5 - 3)",
 	S.GuiScale,
@@ -858,16 +1007,16 @@ local guiScaleInput = createTextInput(
 		if num and num >= 0.5 and num <= 3 then
 			S.GuiScale = num
 			MainScale.Scale = S.GuiScale
+		else
+			guiScaleInput.Text = tostring(S.GuiScale)
 		end
 	end,
 	1
 )
 
-----------------------------------------------------------------
--- LOGO SIZE
-----------------------------------------------------------------
+local logoSizeInput
 
-local logoSizeInput = createTextInput(
+logoSizeInput = createTextInput(
 	T3Container,
 	"Skill 2: Enter Logo Size",
 	S.LogoSize,
@@ -877,20 +1026,13 @@ local logoSizeInput = createTextInput(
 		if num and num >= 20 and num <= 200 then
 			S.LogoSize = num
 
-			Logo.Size = UDim2.new(
-				0,
-				S.LogoSize,
-				0,
-				S.LogoSize
-			)
+			Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+		else
+			logoSizeInput.Text = tostring(S.LogoSize)
 		end
 	end,
 	2
 )
-
-----------------------------------------------------------------
--- BLACK SCREEN
-----------------------------------------------------------------
 
 createSkillButton(
 	T3Container,
@@ -900,17 +1042,12 @@ createSkillButton(
 		S.WhiteScreen = false
 
 		OverlayScreen.Visible = S.BlackScreen
-		OverlayScreen.BackgroundColor3 =
-			Color3.fromRGB(0, 0, 0)
+		OverlayScreen.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 
 		return S.BlackScreen
 	end,
 	3
 )
-
-----------------------------------------------------------------
--- WHITE SCREEN
-----------------------------------------------------------------
 
 createSkillButton(
 	T3Container,
@@ -920,17 +1057,12 @@ createSkillButton(
 		S.BlackScreen = false
 
 		OverlayScreen.Visible = S.WhiteScreen
-		OverlayScreen.BackgroundColor3 =
-			Color3.fromRGB(255, 255, 255)
+		OverlayScreen.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 
 		return S.WhiteScreen
 	end,
 	4
 )
-
-----------------------------------------------------------------
--- LOGO IMAGE
-----------------------------------------------------------------
 
 local function updateLogoImage(id)
 	if id and tostring(id) ~= "" then
@@ -954,15 +1086,9 @@ local logoInput = createTextInput(
 	5
 )
 
-----------------------------------------------------------------
--- GUI BACKGROUND IMAGE
-----------------------------------------------------------------
-
 local function updateGuiBackground(id)
 	if id and tostring(id) ~= "" then
-		GuiBackground.Image =
-			"rbxassetid://" .. tostring(id)
-
+		GuiBackground.Image = "rbxassetid://" .. tostring(id)
 		GuiBackground.Visible = true
 	else
 		GuiBackground.Image = ""
@@ -981,10 +1107,6 @@ local guiBackgroundInput = createTextInput(
 	6
 )
 
-----------------------------------------------------------------
--- SAVE CONFIG
-----------------------------------------------------------------
-
 local saveBtn = Instance.new("TextButton", T3Container)
 
 saveBtn.Size = UDim2.new(1, 0, 0, 24)
@@ -999,7 +1121,17 @@ saveBtn.ZIndex = 24
 Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 4)
 
 saveBtn.MouseButton1Click:Connect(function()
-	if writefile then
+	if not writefile then
+		saveBtn.Text = "Skill 7: Not Supported"
+
+		task.delay(1.2, function()
+			saveBtn.Text = "Skill 7: Save Config"
+		end)
+
+		return
+	end
+
+	local ok = pcall(function()
 		local data = HttpService:JSONEncode({
 			GuiWidth = S.GuiWidth,
 			GuiHeight = S.GuiHeight,
@@ -1007,16 +1139,41 @@ saveBtn.MouseButton1Click:Connect(function()
 			LogoSize = S.LogoSize,
 			LogoImageId = S.LogoImageId,
 			GuiBackgroundImageId = S.GuiBackgroundImageId,
-			LineColorEnabled = S.LineColorEnabled
+			LineMode = S.LineMode,
+			GuiTransparency = S.GuiTransparency,
+			GuiLocked = S.GuiLocked,
+			Crosshair = S.Crosshair,
+
+			ScreenDimEnabled = S.ScreenDimEnabled,
+			ScreenDimOpacity = S.ScreenDimOpacity,
+
+			AimNPC = S.AimNPC,
+			AimPlr = S.AimPlr,
+			Aim2D = S.Aim2D,
+			EspNPC = S.EspNPC,
+			EspNPC2D = S.EspNPC2D,
+			EspPlr = S.EspPlr,
+			EspName = S.EspName,
+			Hitbox = S.Hitbox,
+
+			Fps = S.Fps,
+			Bright = S.Bright,
+			Ultra = S.Ultra
 		})
 
 		writefile(SAVE_FILE, data)
-	end
-end)
+	end)
 
-----------------------------------------------------------------
--- RESET
-----------------------------------------------------------------
+	if ok then
+		saveBtn.Text = "Skill 7: Saved!"
+	else
+		saveBtn.Text = "Skill 7: Save Failed"
+	end
+
+	task.delay(1.2, function()
+		saveBtn.Text = "Skill 7: Save Config"
+	end)
+end)
 
 local resetBtn = Instance.new("TextButton", T3Container)
 
@@ -1086,23 +1243,12 @@ yesBtn.MouseButton1Click:Connect(function()
 	S.LogoSize = 50
 	S.LogoImageId = ""
 	S.GuiBackgroundImageId = ""
-	S.LineColorEnabled = true
+	S.LineMode = "off"
 
-	Main.Size = UDim2.new(
-		0,
-		S.GuiWidth,
-		0,
-		S.GuiHeight
-	)
-
+	Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+	Main.BackgroundColor3 = CFG.MAIN_BG
 	MainScale.Scale = S.GuiScale
-
-	Logo.Size = UDim2.new(
-		0,
-		S.LogoSize,
-		0,
-		S.LogoSize
-	)
+	Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
 
 	guiScaleInput.Text = tostring(S.GuiScale)
 	logoSizeInput.Text = tostring(S.LogoSize)
@@ -1112,84 +1258,279 @@ yesBtn.MouseButton1Click:Connect(function()
 	updateLogoImage("")
 	updateGuiBackground("")
 
-	LineColorBtn.Text = "Line Color Effect: ON"
+	LineModeBtn.Text = lineModeLabel()
 
 	confirmFrame.Visible = false
 	resetBtn.Visible = true
 end)
 
 ----------------------------------------------------------------
+-- TAB 4: INTERFACE
+----------------------------------------------------------------
+
+local function setLogoPosition(pos)
+	Logo.Position = pos
+end
+
+local function setGuiPosition(pos)
+	Main.Position = pos
+end
+
+createSkillButton(T4Container, "Skill 1 (Logo Left)", function()
+	setLogoPosition(UDim2.new(0, 10, 0, 10))
+	return true
+end, 1)
+
+createSkillButton(T4Container, "Skill 2 (Logo Center)", function()
+	setLogoPosition(UDim2.new(0.5, -S.LogoSize / 2, 0, 10))
+	return true
+end, 2)
+
+createSkillButton(T4Container, "Skill 3 (Logo Right)", function()
+	setLogoPosition(UDim2.new(1, -S.LogoSize - 10, 0, 10))
+	return true
+end, 3)
+
+createSkillButton(T4Container, "Skill 4 (GUI Left)", function()
+	setGuiPosition(UDim2.new(0, 10, 0.35, 0))
+	return true
+end, 4)
+
+createSkillButton(T4Container, "Skill 5 (GUI Center)", function()
+	setGuiPosition(UDim2.new(0.5, -S.GuiWidth / 2, 0.35, 0))
+	return true
+end, 5)
+
+createSkillButton(T4Container, "Skill 6 (GUI Right)", function()
+	setGuiPosition(UDim2.new(1, -S.GuiWidth - 10, 0.35, 0))
+	return true
+end, 6)
+
+local GuiLockBtn = createSkillButton(T4Container, "Skill 7 (Lock GUI)", function()
+	S.GuiLocked = not S.GuiLocked
+	Main:SetAttribute("SR_Locked", S.GuiLocked)
+	return S.GuiLocked
+end, 7)
+
+----------------------------------------------------------------
+-- TAB 5: INTERFACE SETTINGS
+----------------------------------------------------------------
+
+local CrosshairBtn = createSkillButton(T5Container, "Skill 1 (Crosshair +)", function()
+	S.Crosshair = not S.Crosshair
+	Crosshair.Visible = S.Crosshair
+	return S.Crosshair
+end, 1)
+
+local GuiTransparencyInput
+
+createSkillButton(T5Container, "Skill 2 (Transparent GUI)", function()
+	S.GuiTransparency = 0.85
+	GuiTransparencyInput.Text = tostring(S.GuiTransparency)
+	return true
+end, 2)
+
+GuiTransparencyInput = createTextInput(
+	T5Container,
+	"Skill 3: GUI Transparency (0 - 1)",
+	S.GuiTransparency,
+	function(val)
+		local num = tonumber(val)
+		if num and num >= 0 and num <= 1 then
+			S.GuiTransparency = num
+		else
+			GuiTransparencyInput.Text = tostring(S.GuiTransparency)
+		end
+	end,
+	3
+)
+
+local ScreenDimBtn = createSkillButton(T5Container, "Skill 4 (Screen Dim)", function()
+	S.ScreenDimEnabled = not S.ScreenDimEnabled
+	DimOverlay.Visible = S.ScreenDimEnabled
+	DimOverlay.BackgroundTransparency = 1 - S.ScreenDimOpacity
+	return S.ScreenDimEnabled
+end, 4)
+
+local ScreenDimInput
+
+ScreenDimInput = createTextInput(
+	T5Container,
+	"Skill 4b: Do mo man hinh (0 - 1)",
+	S.ScreenDimOpacity,
+	function(val)
+		local num = tonumber(val)
+		if num and num >= 0 and num <= 1 then
+			S.ScreenDimOpacity = num
+			if S.ScreenDimEnabled then
+				DimOverlay.BackgroundTransparency = 1 - num
+			end
+		else
+			ScreenDimInput.Text = tostring(S.ScreenDimOpacity)
+		end
+	end,
+	5
+)
+
+----------------------------------------------------------------
+-- TAB 6: MUSIC
+----------------------------------------------------------------
+
+local MusicSound = Instance.new("Sound")
+MusicSound.Name = "SR_Music"
+MusicSound.Volume = S.MusicVolume
+MusicSound.PlaybackSpeed = S.MusicSpeed
+MusicSound.Parent = SoundService
+
+createTextInput(T6Container, "Skill 1: Nhap Sound ID...", S.MusicId, function(val)
+	S.MusicId = tostring(val)
+	MusicSound.SoundId = "rbxassetid://" .. S.MusicId
+end, 1)
+
+createSkillButton(T6Container, "Skill 1b (Phat nhac)", function()
+	S.MusicPlaying = not S.MusicPlaying
+
+	if S.MusicPlaying then
+		if S.MusicId == "" then
+			S.MusicPlaying = false
+			return false
+		end
+
+		MusicSound.SoundId = "rbxassetid://" .. S.MusicId
+		MusicSound:Play()
+	else
+		MusicSound:Stop()
+	end
+
+	return S.MusicPlaying
+end, 2)
+
+local musicVolumeInput
+
+musicVolumeInput = createTextInput(T6Container, "Skill 2: Am luong (0 - 1)", S.MusicVolume, function(val)
+	local num = tonumber(val)
+	if num and num >= 0 and num <= 1 then
+		S.MusicVolume = num
+		MusicSound.Volume = num
+	else
+		musicVolumeInput.Text = tostring(S.MusicVolume)
+	end
+end, 3)
+
+local musicSpeedInput
+
+musicSpeedInput = createTextInput(T6Container, "Skill 3: Toc do nhac (0.1 - 3)", S.MusicSpeed, function(val)
+	local num = tonumber(val)
+	if num and num >= 0.1 and num <= 3 then
+		S.MusicSpeed = num
+		MusicSound.PlaybackSpeed = num
+	else
+		musicSpeedInput.Text = tostring(S.MusicSpeed)
+	end
+end, 4)
+
+----------------------------------------------------------------
 -- AUTO LOAD CONFIG
 ----------------------------------------------------------------
 
 if readfile and isfile and isfile(SAVE_FILE) then
-	pcall(function()
-		local data =
-			HttpService:JSONDecode(readfile(SAVE_FILE))
+	local ok = pcall(function()
+		local data = HttpService:JSONDecode(readfile(SAVE_FILE))
 
-		if data then
-			S.GuiWidth =
-				tonumber(data.GuiWidth) or S.GuiWidth
+		if not data then return end
 
-			S.GuiHeight =
-				tonumber(data.GuiHeight) or S.GuiHeight
+		S.GuiWidth = tonumber(data.GuiWidth) or S.GuiWidth
+		S.GuiHeight = tonumber(data.GuiHeight) or S.GuiHeight
+		S.GuiScale = tonumber(data.GuiScale) or S.GuiScale
+		S.LogoSize = tonumber(data.LogoSize) or S.LogoSize
+		S.LogoImageId = data.LogoImageId or S.LogoImageId
+		S.GuiBackgroundImageId = data.GuiBackgroundImageId or S.GuiBackgroundImageId
 
-			S.GuiScale =
-				tonumber(data.GuiScale) or S.GuiScale
-
-			S.LogoSize =
-				tonumber(data.LogoSize) or S.LogoSize
-
-			S.LogoImageId =
-				data.LogoImageId or S.LogoImageId
-
-			S.GuiBackgroundImageId =
-				data.GuiBackgroundImageId
-				or S.GuiBackgroundImageId
-
-			if data.LineColorEnabled ~= nil then
-				S.LineColorEnabled =
-					data.LineColorEnabled
-			end
-
-			Main.Size = UDim2.new(
-				0,
-				S.GuiWidth,
-				0,
-				S.GuiHeight
-			)
-
-			MainScale.Scale = S.GuiScale
-
-			Logo.Size = UDim2.new(
-				0,
-				S.LogoSize,
-				0,
-				S.LogoSize
-			)
-
-			guiScaleInput.Text =
-				tostring(S.GuiScale)
-
-			logoSizeInput.Text =
-				tostring(S.LogoSize)
-
-			logoInput.Text =
-				S.LogoImageId
-
-			guiBackgroundInput.Text =
-				S.GuiBackgroundImageId
-
-			updateLogoImage(S.LogoImageId)
-			updateGuiBackground(
-				S.GuiBackgroundImageId
-			)
-
-			LineColorBtn.Text =
-				"Line Color Effect: "
-				.. (S.LineColorEnabled and "ON" or "OFF")
+		if data.LineMode ~= nil then S.LineMode = data.LineMode end
+		if data.GuiTransparency ~= nil then
+			S.GuiTransparency = tonumber(data.GuiTransparency) or S.GuiTransparency
 		end
+		if data.GuiLocked ~= nil then S.GuiLocked = data.GuiLocked end
+		if data.Crosshair ~= nil then S.Crosshair = data.Crosshair end
+		if data.ScreenDimEnabled ~= nil then S.ScreenDimEnabled = data.ScreenDimEnabled end
+		if data.ScreenDimOpacity ~= nil then
+			S.ScreenDimOpacity = tonumber(data.ScreenDimOpacity) or S.ScreenDimOpacity
+		end
+
+		Main.Size = UDim2.new(0, S.GuiWidth, 0, S.GuiHeight)
+		MainScale.Scale = S.GuiScale
+		Logo.Size = UDim2.new(0, S.LogoSize, 0, S.LogoSize)
+
+		guiScaleInput.Text = tostring(S.GuiScale)
+		logoSizeInput.Text = tostring(S.LogoSize)
+		logoInput.Text = S.LogoImageId
+		guiBackgroundInput.Text = S.GuiBackgroundImageId
+		GuiTransparencyInput.Text = tostring(S.GuiTransparency)
+		ScreenDimInput.Text = tostring(S.ScreenDimOpacity)
+
+		updateLogoImage(S.LogoImageId)
+		updateGuiBackground(S.GuiBackgroundImageId)
+
+		LineModeBtn.Text = lineModeLabel()
+
+		if S.LineMode == "mode2" then
+			Main.BackgroundColor3 = CFG.TAB_BG
+		else
+			Main.BackgroundColor3 = CFG.MAIN_BG
+		end
+
+		Main:SetAttribute("SR_Locked", S.GuiLocked)
+		setToggleButtonVisual(GuiLockBtn, "Skill 7 (Lock GUI)", S.GuiLocked)
+		setToggleButtonVisual(CrosshairBtn, "Skill 1 (Crosshair +)", S.Crosshair)
+
+		DimOverlay.Visible = S.ScreenDimEnabled
+		DimOverlay.BackgroundTransparency = 1 - S.ScreenDimOpacity
+		setToggleButtonVisual(ScreenDimBtn, "Skill 4 (Screen Dim)", S.ScreenDimEnabled)
+
+		if data.AimNPC ~= nil then S.AimNPC = data.AimNPC end
+		if data.AimPlr ~= nil then S.AimPlr = data.AimPlr end
+		if data.Aim2D ~= nil then S.Aim2D = data.Aim2D end
+		if data.EspNPC ~= nil then S.EspNPC = data.EspNPC end
+		if data.EspNPC2D ~= nil then S.EspNPC2D = data.EspNPC2D end
+		if data.EspPlr ~= nil then S.EspPlr = data.EspPlr end
+		if data.Hitbox ~= nil then S.Hitbox = data.Hitbox end
+
+		setToggleButtonVisual(Skill1Btn, "Skill 1 (Aim NPC Strict & Lock)", S.AimNPC)
+		if not S.AimNPC then Skill1Btn.TextColor3 = Color3.fromRGB(160, 160, 160) end
+		if S.AimNPC then lockedNPC = getClosestNPC() end
+
+		setToggleButtonVisual(Skill2Btn, "Skill 2 (Aim Player & Lock)", S.AimPlr)
+		if not S.AimPlr then Skill2Btn.TextColor3 = Color3.fromRGB(255, 40, 40) end
+		if S.AimPlr then lockedPlayer = getClosestPlayerToCenter() end
+
+		setToggleButtonVisual(Aim2DBtn, "Skill 5 (Aim NPC 2D)", S.Aim2D)
+		setToggleButtonVisual(EspNPCBtn, "Skill 3 (ESP NPC)", S.EspNPC)
+		setToggleButtonVisual(EspNPC2DBtn, "Skill 6 (ESP NPC 2D)", S.EspNPC2D)
+		setToggleButtonVisual(Skill4Btn, "Skill 4 (ESP Player)", S.EspPlr)
+		if not S.EspPlr then Skill4Btn.TextColor3 = Color3.fromRGB(255, 40, 40) end
+		setToggleButtonVisual(Skill9Btn, "Skill 9 (Hitbox Player)", S.Hitbox)
+		if not S.Hitbox then Skill9Btn.TextColor3 = Color3.fromRGB(170, 0, 255) end
+
+		if data.EspName ~= nil then S.EspName = data.EspName end
+		if data.Fps ~= nil then S.Fps = data.Fps end
+		if data.Bright ~= nil then S.Bright = data.Bright end
+		if data.Ultra ~= nil then S.Ultra = data.Ultra end
+
+		setToggleButtonVisual(NamePlayerBtn, "Skill 1 (ESP Name Player)", S.EspName)
+		if not S.EspName then NamePlayerBtn.TextColor3 = Color3.fromRGB(255, 40, 40) end
+
+		setToggleButtonVisual(FpsBtn, "Skill 2 (FPS Booster)", S.Fps)
+		setToggleButtonVisual(BrightBtn, "Skill 3 (Full Bright)", S.Bright)
+		setToggleButtonVisual(UltraBtn, "Skill 4 (Ultra Liminal)", S.Ultra)
+
+		applyFps(S.Fps)
+		applyBright(S.Bright)
+		applyUltra(S.Ultra)
 	end)
+
+	if not ok then
+		warn("[ScarletRomen] Load config bi loi, dung config mac dinh.")
+	end
 end
 
 ----------------------------------------------------------------
@@ -1198,17 +1539,15 @@ end
 
 local frames = 0
 local lastT = tick()
-
 local hue = 0
 
 RunService.RenderStepped:Connect(function(dt)
 
 	------------------------------------------------------------
-	-- FPS
+	-- FPS COUNTER
 	------------------------------------------------------------
 
 	frames = frames + 1
-
 	if tick() - lastT >= 1 then
 		FPSLbl.Text = "FPS: " .. frames
 		frames = 0
@@ -1216,288 +1555,280 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	------------------------------------------------------------
-	-- RED -> BLACK LINE EFFECT
+	-- AIM NPC & ESP NPC
 	------------------------------------------------------------
 
-	if S.LineColorEnabled then
-		hue = (hue + dt * CFG.COLOR_SPEED) % 2
-
-		-- 0 -> 1: đỏ -> đen
-		-- 1 -> 2: đen -> đỏ
-		local alpha
-
-		if hue <= 1 then
-			alpha = hue
-		else
-			alpha = 2 - hue
+	if S.AimNPC or S.EspNPC then
+		local now = os.clock()
+		if now - lastNPCRefresh >= NPC_REFRESH_INTERVAL then
+			refreshNPCCache()
+			lastNPCRefresh = now
 		end
 
-		local dynamicLine =
-			CFG.THEME:Lerp(
-				CFG.BASIC_LINE,
-				alpha
-			)
+		if S.EspNPC then
+			for _, model in ipairs(cachedNPCs) do
+				if isValidNPC(model) then
+					applyNPCESP(model)
+				end
+			end
 
-		-- Main GUI border
+			for model, highlight in pairs(espHighlights) do
+				if not isValidNPC(model) then
+					highlight:Destroy()
+					espHighlights[model] = nil
+				end
+			end
+		end
+
+		if S.AimNPC then
+			if not lockedNPC or not isValidNPC(lockedNPC) then
+				lockedNPC = getClosestNPC()
+			end
+
+			if lockedNPC then
+				local head = lockedNPC:FindFirstChild("Head") or lockedNPC.PrimaryPart
+				if head then
+					Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+				end
+			end
+		end
+	end
+
+	------------------------------------------------------------
+	-- AIM PLAYER (Skill 2)
+	------------------------------------------------------------
+
+	if S.AimPlr then
+		if not lockedPlayer or not isValidPlayer(lockedPlayer) then
+			lockedPlayer = getClosestPlayerToCenter()
+		end
+
+		if lockedPlayer and lockedPlayer.Character then
+			local head = lockedPlayer.Character:FindFirstChild("Head")
+			if head then
+				-- Lock Camera vào đầu target
+				Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
+
+				-- Quay cơ thể người chơi về phía target
+				local localChar = LocalPlayer.Character
+				if localChar then
+					local root = localChar:FindFirstChild("HumanoidRootPart")
+					if root then
+						local targetPos = Vector3.new(head.Position.X, root.Position.Y, head.Position.Z)
+						root.CFrame = CFrame.new(root.Position, targetPos)
+					end
+				end
+			end
+		end
+	end
+
+	------------------------------------------------------------
+	-- ESP PLAYER (Skill 4)
+	------------------------------------------------------------
+
+	if S.EspPlr then
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if isValidPlayer(plr) then
+				applyPlayerESP(plr)
+			end
+		end
+
+		for plr, hl in pairs(playerESPHighlights) do
+			if not isValidPlayer(plr) then
+				if hl and hl.Parent then hl:Destroy() end
+				playerESPHighlights[plr] = nil
+			end
+		end
+	end
+
+	------------------------------------------------------------
+	-- HITBOX PLAYER (Skill 9)
+	------------------------------------------------------------
+
+	if S.Hitbox then
+		for _, plr in ipairs(Players:GetPlayers()) do
+			local char = plr.Character
+			if char then
+				local root = char:FindFirstChild("HumanoidRootPart")
+				if root then
+					root.Size = Vector3.new(13, 13, 13)
+					root.CanCollide = false
+					root.Transparency = 0.75
+
+					if plr == LocalPlayer then
+						root.Color = Color3.fromRGB(170, 0, 255) -- Hitbox User màu tím
+					else
+						root.Color = getPlayerColor(plr) -- Đồng đội: Xanh lá, Kẻ địch: Đỏ
+					end
+				end
+			end
+		end
+	end
+
+	------------------------------------------------------------
+	-- ESP INTERACT (Skill 8)
+	------------------------------------------------------------
+
+	if S.EspInteract then
+		local now2 = os.clock()
+		if now2 - lastPromptRefresh >= PROMPT_REFRESH_INTERVAL then
+			refreshPromptCache()
+			lastPromptRefresh = now2
+		end
+
+		for _, prompt in ipairs(cachedPrompts) do
+			if isValidPrompt(prompt) then
+				applyPromptESP(prompt)
+			end
+		end
+
+		for prompt, data in pairs(promptESP) do
+			if not isValidPrompt(prompt) then
+				if data.highlight then data.highlight:Destroy() end
+				if data.billboard then data.billboard:Destroy() end
+				promptESP[prompt] = nil
+			end
+		end
+	end
+
+	------------------------------------------------------------
+	-- LINE MODE
+	------------------------------------------------------------
+
+	if S.LineMode == "off" then
+		hue = (hue + dt * CFG.COLOR_SPEED) % 2
+		local alpha = hue <= 1 and hue or (2 - hue)
+		local dynamicLine = CFG.THEME:Lerp(CFG.BASIC_LINE, alpha)
+
 		MSt.Color = dynamicLine
-
-		-- Logo border
 		LSt.Color = dynamicLine
 
-		-- Tab borders
 		for _, tabData in ipairs(tabButtons) do
 			if tabData.Stroke then
 				tabData.Stroke.Color = dynamicLine
 			end
-
-			if tabData.Button then
-				if tabData.Button.Text:find("%[ %- %]") then
-					tabData.Button.BackgroundColor3 =
-						dynamicLine
-				end
-			end
 		end
 
-		-- Scrollbar
-		MainScroll.ScrollBarImageColor3 =
-			dynamicLine
+		MainScroll.ScrollBarImageColor3 = dynamicLine
+		saveBtn.BackgroundColor3 = dynamicLine
 
-		-- Save button cũng chạy theo line
-		saveBtn.BackgroundColor3 =
-			dynamicLine
-
-	else
-		-- Tắt hiệu ứng = toàn bộ line đen
+	elseif S.LineMode == "mode1" or S.LineMode == "mode2" then
 		MSt.Color = CFG.BASIC_LINE
 		LSt.Color = CFG.BASIC_LINE
 
-		MainScroll.ScrollBarImageColor3 =
-			CFG.BASIC_LINE
-
-		saveBtn.BackgroundColor3 =
-			Color3.fromRGB(35, 35, 35)
+		MainScroll.ScrollBarImageColor3 = CFG.BASIC_LINE
+		saveBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 
 		for _, tabData in ipairs(tabButtons) do
 			if tabData.Stroke then
-				tabData.Stroke.Color =
-					CFG.BASIC_LINE
+				tabData.Stroke.Color = CFG.BASIC_LINE
 			end
 		end
-	end
 
-	------------------------------------------------------------
-	-- AIM PLAYER RAINBOW
-	------------------------------------------------------------
+		if S.LineMode == "mode2" then
+			MSt.Transparency = 1
+		end
 
-	if S.AimPlr then
-		RainbowBtn.BackgroundColor3 =
-			Color3.fromHSV(
-				(tick() * 0.2) % 1,
-				0.8,
-				1
-			)
+	elseif S.LineMode == "mode3" then
+		hue = (hue + dt * CFG.COLOR_SPEED) % 2
+		local alpha = hue <= 1 and hue or (2 - hue)
+		local dynamicLine = Color3.fromRGB(255, 40, 40):Lerp(Color3.fromRGB(255, 255, 255), alpha)
 
-		RainbowBtn.TextColor3 =
-			Color3.fromRGB(255, 255, 255)
-	else
-		RainbowBtn.TextColor3 =
-			Color3.fromRGB(200, 200, 200)
-	end
+		MSt.Color = dynamicLine
+		LSt.Color = dynamicLine
 
-	------------------------------------------------------------
-	-- ESP PLAYER
-	------------------------------------------------------------
-
-	if S.EspPlr then
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p.Character then
-
-				if p == LocalPlayer then
-					toggleHL(
-						p.Character,
-						CFG.MY_BODY,
-						"SR_PLR",
-						true,
-						0.7
-					)
-				else
-					local espColor =
-						isEnemy(p)
-						and CFG.ENEMY
-						or CFG.ALLY
-
-					toggleHL(
-						p.Character,
-						espColor,
-						"SR_PLR",
-						true,
-						0.5
-					)
-				end
+		for _, tabData in ipairs(tabButtons) do
+			if tabData.Stroke then
+				tabData.Stroke.Color = dynamicLine
 			end
 		end
+
+		MainScroll.ScrollBarImageColor3 = dynamicLine
+		saveBtn.BackgroundColor3 = dynamicLine
 	end
 
 	------------------------------------------------------------
-	-- AIM LOCK
+	-- SKILL BUTTON PULSE COLORS
 	------------------------------------------------------------
 
-	local currentTarget = nil
+	local pulse = (math.sin(tick() * 2.5) + 1) / 2
+	local activePulseColor = Color3.fromRGB(70, 140, 255):Lerp(Color3.fromRGB(255, 255, 255), pulse)
 
 	if S.AimNPC then
-
-		if not isStrictNPC(S.LockedTargetNPC) then
-			S.LockedTargetNPC =
-				getClosestToCrosshair(isStrictNPC)
-		end
-
-		currentTarget = S.LockedTargetNPC
-
-	elseif S.AimPlr then
-
-		if not isStrictPlayer(S.LockedTargetPlr) then
-			S.LockedTargetPlr =
-				getClosestToCrosshair(isStrictPlayer)
-		end
-
-		currentTarget = S.LockedTargetPlr
-
-	elseif S.Aim2D then
-
-		currentTarget =
-			getClosestToCrosshair(is2DNPC)
-
+		Skill1Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	else
-		S.LockedTargetNPC = nil
-		S.LockedTargetPlr = nil
+		Skill1Btn.TextColor3 = Color3.fromRGB(160, 160, 160)
 	end
 
-	if currentTarget then
-		local p = getHeadPos(currentTarget)
-
-		if p then
-			Camera.CFrame =
-				CFrame.lookAt(
-					Camera.CFrame.Position,
-					p
-				)
-		end
+	if S.AimPlr then
+		Skill2Btn.TextColor3 = activePulseColor
+	else
+		Skill2Btn.TextColor3 = Color3.fromRGB(255, 40, 40)
 	end
 
-	------------------------------------------------------------
-	-- ESP NAME PLAYER
-	------------------------------------------------------------
+	if S.EspPlr then
+		Skill4Btn.TextColor3 = activePulseColor
+	else
+		Skill4Btn.TextColor3 = Color3.fromRGB(255, 40, 40)
+	end
 
 	if S.EspName then
-
-		for _, p in ipairs(Players:GetPlayers()) do
-
-			if p ~= LocalPlayer
-				and p.Character
-				and p.Character:FindFirstChild("Head") then
-
-				local head =
-					p.Character.Head
-
-				local hum =
-					p.Character:FindFirstChildOfClass(
-						"Humanoid"
-					)
-
-				local tag =
-					head:FindFirstChild("SR_NameTag")
-
-				if hum and hum.Health > 0 then
-
-					if not tag then
-
-						tag = Instance.new(
-							"BillboardGui"
-						)
-
-						tag.Name =
-							"SR_NameTag"
-
-						tag.Parent = head
-						tag.Size =
-							UDim2.new(
-								0,
-								150,
-								0,
-								40
-							)
-
-						tag.StudsOffset =
-							Vector3.new(
-								0,
-								2.5,
-								0
-							)
-
-						tag.AlwaysOnTop = true
-
-						local lbl =
-							Instance.new(
-								"TextLabel",
-								tag
-							)
-
-						lbl.Name =
-							"NameLabel"
-
-						lbl.Size =
-							UDim2.new(
-								1,
-								0,
-								1,
-								0
-							)
-
-						lbl.BackgroundTransparency = 1
-
-						lbl.TextColor3 =
-							CFG.NAME
-
-						lbl.TextStrokeColor3 =
-							CFG.STROKE
-
-						lbl.TextStrokeTransparency = 0
-						lbl.Font =
-							Enum.Font.SourceSansBold
-
-						lbl.TextSize = 16
-					end
-
-					tag.NameLabel.Text =
-						p.Name
-						.. "\n["
-						.. math.floor(hum.Health)
-						.. " / "
-						.. math.floor(hum.MaxHealth)
-						.. " HP]"
-
-				elseif tag then
-					tag:Destroy()
-				end
-			end
-		end
-
+		NamePlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	else
+		NamePlayerBtn.TextColor3 = Color3.fromRGB(255, 40, 40)
+	end
 
-		for _, p in ipairs(Players:GetPlayers()) do
+	if S.Hitbox then
+		Skill9Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		Skill9Btn.TextColor3 = Color3.fromRGB(170, 0, 255)
+	end
 
-			if p.Character
-				and p.Character:FindFirstChild("Head") then
+	------------------------------------------------------------
+	-- INTERFACE SETTINGS
+	------------------------------------------------------------
 
-				local tag =
-					p.Character.Head:FindFirstChild(
-						"SR_NameTag"
-					)
+	Crosshair.Visible = S.Crosshair
 
-				if tag then
-					tag:Destroy()
-				end
-			end
+	local guiAlpha = math.clamp(S.GuiTransparency, 0, 1)
+	Main.BackgroundTransparency = guiAlpha
+
+	Logo.BackgroundTransparency = 0.15
+	LSt.Transparency = 0.15
+
+	for _, tabData in ipairs(tabButtons) do
+		if tabData.Button then
+			tabData.Button.BackgroundTransparency = 0.15
 		end
+		if tabData.Stroke then
+			tabData.Stroke.Transparency = 0.15
+		end
+	end
+
+	if guiAlpha >= 0.5 then
+		GuiBackground.Visible = false
+		MSt.Transparency = 1
+		LSt.Transparency = 1
+	elseif S.LineMode ~= "mode2" then
+		MSt.Transparency = 0
+		LSt.Transparency = 0.15
+	end
+end)
+
+----------------------------------------------------------------
+-- RESET KHI NHAN VAT RESPAWN
+----------------------------------------------------------------
+
+LocalPlayer.CharacterAdded:Connect(function()
+	lockedNPC = nil
+	lockedPlayer = nil
+	if not S.EspNPC then
+		clearAllNPCESP()
+	end
+	if not S.EspPlr then
+		clearAllPlayerESP()
+	end
+	if not S.EspInteract then
+		clearAllPromptESP()
 	end
 end)
